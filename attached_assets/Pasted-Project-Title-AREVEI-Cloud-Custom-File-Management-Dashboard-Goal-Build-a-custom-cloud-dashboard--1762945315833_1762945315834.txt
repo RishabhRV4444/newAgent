@@ -1,0 +1,234 @@
+Project Title: AREVEI Cloud — Custom File Management Dashboard
+Goal:
+Build a custom cloud dashboard that runs locally or via IP (for now).
+The app should let users manage files — upload, create folders, rename, delete, and preview — with a clean React frontend and Node.js backend.
+
+🧱 Architecture Overview
+
+
+Frontend: React + TailwindCSS + Vite
+
+
+Backend: Node.js + Express
+
+
+Storage: Local filesystem (/uploads)
+
+
+Database: Simple JSON or SQLite (for now) to store file metadata
+
+
+Workflow:
+
+
+User accesses dashboard via http://localhost:3000 (Replit preview)
+
+
+Dashboard connects to backend API at http://localhost:5000
+
+
+Files are stored locally in /uploads folder
+
+
+
+🎨 Frontend Requirements
+Build a modern dashboard UI for file management:
+
+
+Left sidebar:
+
+
+Dashboard
+
+
+Files
+
+
+Storage Usage
+
+
+Settings
+
+
+
+
+Topbar:
+
+
+Search bar
+
+
+User icon/profile
+
+
+
+
+Main area:
+
+
+List and grid view of files/folders
+
+
+Upload button (drag & drop supported)
+
+
+Create folder button
+
+
+Sort, filter, and search files
+
+
+Show file name, type, size, and last modified date
+
+
+
+
+Responsive layout
+
+
+Use AREVEI Blue (#4F46E5) as the accent color
+
+
+Design should feel like Notion x Google Drive — minimal, fast, elegant
+
+
+
+⚙️ Backend Requirements (Node.js + Express)
+
+
+Serve API on port 5000
+
+
+CORS enabled for frontend
+
+
+Endpoints:
+
+
+POST /api/upload → Upload file(s) to /uploads
+
+
+GET /api/files → List all files/folders with metadata
+
+
+DELETE /api/files/:name → Delete file by name
+
+
+PUT /api/rename → Rename file or folder
+
+
+POST /api/folder → Create new folder
+
+
+
+
+Store metadata in a JSON file (files.json) for now
+
+
+Use multer for uploads
+
+
+Return JSON responses
+
+
+
+🧩 Folder Structure
+arevei-cloud/
+├── backend/
+│   ├── index.js
+│   ├── files.json
+│   └── uploads/
+├── frontend/
+│   ├── src/
+│   └── package.json
+├── package.json
+└── README.md
+
+
+🧠 Features to Implement
+
+
+File upload (multiple)
+
+
+Create new folder
+
+
+Rename or delete file
+
+
+Show file preview (for images & PDFs)
+
+
+Display total storage usage
+
+
+Smooth animations for file actions (Framer Motion)
+
+
+
+🌐 Later Upgrades
+
+
+Replace local /uploads with MinIO or S3
+
+
+Add user authentication (JWT)
+
+
+Add domain support (e.g., cloud.arevei.com)
+
+
+Add AREVEI Agent connection (for local storage access)
+
+
+
+Branding Info
+
+
+Name: AREVEI Cloud
+
+
+Color Theme: White background, #4F46E5 as primary accent, subtle gray borders
+
+
+Typography: Inter or Poppins
+
+
+Logo: Simple text “AREVEI Cloud” in sidebar top
+
+
+
+Deliverables
+
+
+Fully functional localhost setup (frontend + backend)
+
+
+File upload, delete, rename, and list endpoints working
+
+
+React dashboard connected to backend API
+
+
+Simple storage usage indicator
+
+
+
+Start building now.
+
+
+Once it’s generated in Replit:
+
+
+Run the backend first → it will host the API on port 5000
+
+
+Then run the frontend → it will fetch from http://localhost:5000/api/...
+
+
+Files will be stored in /backend/uploads/
+
+
+
+Would you like me to also include a ready backend code template for Replit (Express + Multer upload + file listing) so you can paste it instantly and start running?

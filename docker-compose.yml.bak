@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  arevei-cloud:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: arevei-cloud-app
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - AREVEI_STORAGE_PATH=/home/appuser/.arevei-cloud/uploads
+    volumes:
+      - /c/Users/Wave/.arevei-cloud/uploads:/home/appuser/.arevei-cloud/uploads
+      # Alternative: mount a custom directory (uncomment and modify path)
+      # - /path/to/your/storage:/home/appuser/.arevei-cloud/uploads
+    restart: unless-stopped
+    networks:
+      - arevei-network
+    # Uncomment to use environment file
+    # env_file:
+    #   - .env.production
+
+networks:
+  arevei-network:
+    driver: bridge
