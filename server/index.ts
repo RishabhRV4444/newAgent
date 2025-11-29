@@ -1,4 +1,13 @@
+// Load environment variables from .env early so code (db, config) can access them.
+import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
+import session from "express-session";
+import memorystore from "memorystore";
+
+// Initialize session store (MemoryStore). For production you may want
+// to use a persistent store (e.g., connect-pg-simple) configured via
+// DATABASE_URL. This MemoryStore is fine for local development.
+const MemoryStore = memorystore(session as any);
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
@@ -15,6 +24,20 @@ app.use(express.json({
   }
 }));
 app.use(express.urlencoded({ extended: false }));
+
+// Session middleware (must be registered before routes that use `req.session`)
+app.use(
+  session({
+    store: new MemoryStore({ checkPeriod: 24 * 60 * 60 * 1000 }),
+    secret: process.env.SESSION_SECRET || "dev-session-secret",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      maxAge: 24 * 60 * 60 * 1000,
+      httpOnly: true,
+    },
+  }),
+);
 
 app.use((req, res, next) => {
   const start = Date.now();

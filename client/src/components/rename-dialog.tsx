@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { FileItem } from "@/shared/schema";
+import type { FileItem } from "@shared/schema";
 
 interface RenameDialogProps {
   file: FileItem | null;

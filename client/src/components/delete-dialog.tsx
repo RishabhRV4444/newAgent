@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { FileItem } from "@/shared/schema";
+import type { FileItem } from "@shared/schema";
 
 interface DeleteDialogProps {
   file: FileItem | null;

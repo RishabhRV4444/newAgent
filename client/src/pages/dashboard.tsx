@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { FolderOpen, FileText, HardDrive } from "lucide-react";
 import { motion } from "framer-motion";
-import type { StorageInfo } from "@/shared/schema";
+import type { StorageInfo } from "@shared/schema";
 
 export default function Dashboard() {
   const { data: storageInfo, isLoading } = useQuery<StorageInfo>({

@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import { X } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import type { FileItem } from "@/shared/schema";
+import type { FileItem } from "@shared/schema";
 
 interface FilePreviewModalProps {
   file: FileItem | null;
