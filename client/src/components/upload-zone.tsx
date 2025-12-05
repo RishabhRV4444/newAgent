@@ -4,7 +4,7 @@ import type React from "react"
 
 import { useCallback, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Upload, FileText, Loader2, CheckCircle2, AlertCircle } from "lucide-react"
+import { Upload, FileText, Loader2, CheckCircle2, AlertCircle, FolderOpen } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -36,6 +36,7 @@ export function UploadZone({ open, onOpenChange, currentPath = "/" }: UploadZone
       files.forEach((file) => {
         formData.append("files", file)
       })
+      console.log(`[UploadZone] Uploading to path: ${currentPath}`)
       formData.append("parentPath", currentPath)
 
       const res = await fetch("/api/upload", {
@@ -138,11 +139,12 @@ export function UploadZone({ open, onOpenChange, currentPath = "/" }: UploadZone
       <DialogContent className="sm:max-w-2xl bg-slate-800 border-slate-700" data-testid="dialog-upload">
         <DialogHeader>
           <DialogTitle className="text-white">Upload Files</DialogTitle>
-          {currentPath !== "/" && (
-            <p className="text-sm text-slate-400 mt-2">
-              Uploading to: <span className="text-slate-200 font-mono">{currentPath}</span>
-            </p>
-          )}
+          <div className="flex items-center gap-2 mt-2 text-sm text-blue-400 bg-slate-700/50 px-3 py-2 rounded-md">
+            <FolderOpen className="h-4 w-4" />
+            <span>
+              Uploading to: <strong className="font-mono">{currentPath === "/" ? "Root" : currentPath}</strong>
+            </span>
+          </div>
         </DialogHeader>
 
         {uploadingFiles.length === 0 ? (

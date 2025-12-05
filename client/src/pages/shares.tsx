@@ -1,152 +1,214 @@
-"use client"
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { motion, AnimatePresence } from "framer-motion";
+import { 
+  Share2, 
+  Copy, 
+  Clock, 
+  Link2, 
+  Check, 
+  Loader2, 
+  StopCircle,
+  FileText,
+  ExternalLink
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { ShareLink } from "@shared/schema";
 
-import { useEffect, useState } from "react"
-import { useLocation } from "wouter"
-import { Copy, Trash2, Clock, Lock, Download, Share2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
-import { AppSidebar } from "@/components/app-sidebar"
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
+export default function Shares() {
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const { toast } = useToast();
 
-interface Share {
-  id: string
-  fileId: string
-  shareToken: string
-  password: boolean
-  expiresAt?: string
-  maxDownloads?: number
-  downloadCount: number
-  createdAt: string
-}
+  const { data: shares = [], isLoading } = useQuery<ShareLink[]>({
+    queryKey: ["/api/shares"],
+  });
 
-export default function SharesPage() {
-  const [, navigate] = useLocation();
-  const [shares, setShares] = useState<Share[]>([])
-  const [loading, setLoading] = useState(true)
-  const [copied, setCopied] = useState<string | null>(null)
+  const stopShareMutation = useMutation({
+    mutationFn: async (shareId: string) => {
+      return apiRequest("DELETE", `/api/shares/${shareId}`, null);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/shares"] });
+      toast({
+        title: "Sharing stopped",
+        description: "The share link has been disabled",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to stop sharing",
+        description: error.message || "An error occurred",
+        variant: "destructive",
+      });
+    },
+  });
 
-  useEffect(() => {
-    fetchShares()
-  }, [])
-
-  const fetchShares = async () => {
+  const handleCopyLink = async (share: ShareLink) => {
+    if (!share.tunnelUrl) return;
     try {
-      const res = await fetch("/api/shares")
-      if (!res.ok) throw new Error("Failed to fetch shares")
-      const data = await res.json()
-      setShares(data.shares || [])
+      await navigator.clipboard.writeText(share.tunnelUrl);
+      setCopiedId(share.id);
+      setTimeout(() => setCopiedId(null), 2000);
+      toast({
+        title: "Link copied",
+        description: "Share link copied to clipboard",
+      });
     } catch (error) {
-      console.error("Error fetching shares:", error)
-    } finally {
-      setLoading(false)
+      toast({
+        title: "Failed to copy",
+        description: "Could not copy link to clipboard",
+        variant: "destructive",
+      });
     }
-  }
+  };
 
-  const copyShareLink = (token: string) => {
-    const url = `${window.location.origin}/share/${token}`
-    navigator.clipboard.writeText(url)
-    setCopied(token)
-    setTimeout(() => setCopied(null), 2000)
-  }
-
-  const deleteShare = async (id: string) => {
-    try {
-      const res = await fetch(`/api/shares/${id}`, { method: "DELETE" })
-      if (!res.ok) throw new Error("Failed to delete share")
-      setShares(shares.filter((s) => s.id !== id))
-    } catch (error) {
-      console.error("Error deleting share:", error)
+  const formatTimeRemaining = (expiresAt: string | null) => {
+    if (!expiresAt) return "Never expires";
+    
+    const now = new Date();
+    const expires = new Date(expiresAt);
+    const diff = expires.getTime() - now.getTime();
+    
+    if (diff <= 0) return "Expired";
+    
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    
+    if (hours > 24) {
+      const days = Math.floor(hours / 24);
+      return `${days} day${days > 1 ? 's' : ''} remaining`;
     }
-  }
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m remaining`;
+    }
+    
+    return `${minutes}m remaining`;
+  };
+
+  const activeShares = shares.filter(s => s.isActive && s.tunnelUrl);
 
   return (
-    <SidebarProvider>
-      <div className="flex h-screen bg-slate-950">
-        <AppSidebar />
-        <main className="flex-1 flex flex-col overflow-hidden">
-          <header className="border-b border-slate-800 bg-slate-900 px-6 py-4 flex items-center gap-2">
-            <SidebarTrigger />
-            <h1 className="text-2xl font-bold text-white">Shared Files</h1>
-          </header>
+    <div className="p-8 space-y-8">
+      <div>
+        <h1 className="text-3xl font-bold mb-2" data-testid="text-shares-title">
+          Active Shares
+        </h1>
+        <p className="text-muted-foreground">
+          Manage files being shared via ngrok tunnels
+        </p>
+      </div>
 
-          <div className="flex-1 overflow-auto p-6">
-            {loading ? (
-              <div className="flex items-center justify-center h-full">
-                <p className="text-slate-400">Loading shares...</p>
-              </div>
-            ) : shares.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full">
-                <Share2 className="w-16 h-16 text-slate-600 mb-4" />
-                <p className="text-slate-400 text-lg">No shared files yet</p>
-                <p className="text-slate-500 text-sm mt-2">Share files from your dashboard to see them here</p>
-              </div>
-            ) : (
-              <div className="grid gap-4">
-                {shares.map((share) => (
-                  <Card key={share.id} className="bg-slate-900 border-slate-800 p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <p className="font-semibold text-white">{share.fileId}</p>
-                          {share.password && <Lock className="w-4 h-4 text-amber-500" />}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : activeShares.length === 0 ? (
+        <Card>
+          <CardContent className="py-12">
+            <div className="text-center space-y-3">
+              <Share2 className="h-12 w-12 mx-auto text-muted-foreground" />
+              <h3 className="text-lg font-medium">No active shares</h3>
+              <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                Share files from the Files page to create ngrok links that can be accessed from anywhere in the world.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-4">
+          <AnimatePresence mode="popLayout">
+            {activeShares.map((share, index) => (
+              <motion.div
+                key={share.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ delay: index * 0.05, duration: 0.2 }}
+              >
+                <Card data-testid={`card-share-${share.id}`}>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="p-2 bg-primary/10 rounded-lg shrink-0">
+                          <FileText className="h-5 w-5 text-primary" />
                         </div>
-                        <p className="text-sm text-slate-400 mb-3">
-                          Created {new Date(share.createdAt).toLocaleDateString()}
-                        </p>
-
-                        <div className="flex flex-wrap gap-2 mb-3">
-                          {share.maxDownloads && (
-                            <div className="flex items-center gap-1 text-sm bg-slate-800 px-3 py-1 rounded text-slate-300">
-                              <Download className="w-3 h-3" />
-                              {share.downloadCount}/{share.maxDownloads}
-                            </div>
-                          )}
-                          {share.expiresAt && (
-                            <div className="flex items-center gap-1 text-sm bg-slate-800 px-3 py-1 rounded text-slate-300">
-                              <Clock className="w-3 h-3" />
-                              Expires {new Date(share.expiresAt).toLocaleDateString()}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            readOnly
-                            value={`${window.location.origin}/share/${share.shareToken}`}
-                            className="flex-1 bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-300"
-                          />
-                          <Button
-                            size="sm"
-                            onClick={() => copyShareLink(share.shareToken)}
-                            className={`${
-                              copied === share.shareToken
-                                ? "bg-green-600 hover:bg-green-600"
-                                : "bg-slate-700 hover:bg-slate-600"
-                            }`}
-                          >
-                            <Copy className="w-4 h-4" />
-                          </Button>
+                        <div className="min-w-0">
+                          <CardTitle className="text-lg truncate" data-testid={`text-filename-${share.id}`}>
+                            {share.fileName}
+                          </CardTitle>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Clock className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-xs text-muted-foreground">
+                              {formatTimeRemaining(share.expiresAt)}
+                            </span>
+                            <Badge variant="secondary" className="text-xs">
+                              ngrok
+                            </Badge>
+                          </div>
                         </div>
                       </div>
-
                       <Button
+                        variant="destructive"
                         size="sm"
-                        variant="ghost"
-                        className="text-red-400 hover:text-red-300 hover:bg-slate-800 ml-4"
-                        onClick={() => deleteShare(share.id)}
+                        onClick={() => stopShareMutation.mutate(share.id)}
+                        disabled={stopShareMutation.isPending}
+                        data-testid={`button-stop-${share.id}`}
                       >
-                        <Trash2 className="w-4 h-4" />
+                        {stopShareMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <>
+                            <StopCircle className="h-4 w-4 mr-1" />
+                            Stop
+                          </>
+                        )}
                       </Button>
                     </div>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </div>
-        </main>
-      </div>
-    </SidebarProvider>
-  )
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+                      <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <code className="flex-1 text-xs break-all" data-testid={`text-url-${share.id}`}>
+                        {share.tunnelUrl}
+                      </code>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => handleCopyLink(share)}
+                        data-testid={`button-copy-${share.id}`}
+                      >
+                        {copiedId === share.id ? (
+                          <Check className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        asChild
+                        data-testid={`button-open-${share.id}`}
+                      >
+                        <a href={share.tunnelUrl || "#"} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Created: {new Date(share.createdAt).toLocaleString()}
+                    </p>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      )}
+    </div>
+  );
 }
-

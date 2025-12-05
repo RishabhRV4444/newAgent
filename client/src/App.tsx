@@ -19,6 +19,7 @@ import Login from "@/pages/login"
 import Signup from "@/pages/signup"
 import NotFound from "@/pages/not-found"
 import { useToast } from "@/hooks/use-toast"
+import Shares from "@/pages/shares";
 
 interface User {
   id: string
@@ -41,6 +42,7 @@ function Router({ user }: { user: User | null }) {
     <Switch>
       <Route path="/" component={Dashboard} />
       <Route path="/files" component={Files} />
+      <Route path="/shares" component={Shares} />
       <Route path="/storage" component={Storage} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />

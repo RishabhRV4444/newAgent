@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { motion, AnimatePresence } from "framer-motion"
 import { Grid3x3, List, Search, Upload, FolderPlus, ChevronLeft } from "lucide-react"
@@ -24,10 +24,26 @@ export default function Files() {
     queryKey: ["/api/files"],
   })
 
-  const filteredFiles = files.filter((file) => file.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  const currentFolderFiles = useMemo(() => {
+    return files.filter((file) => {
+      // Normalize paths for comparison
+      const fileParentPath = file.parentPath || "/"
+      const normalizedCurrentPath = currentPath === "/" ? "/" : currentPath
+      const normalizedFileParentPath =
+        fileParentPath === "/" ? "/" : `/${fileParentPath.replace(/^\//, "").replace(/\/$/, "")}`
+
+      return normalizedFileParentPath === normalizedCurrentPath
+    })
+  }, [files, currentPath])
+
+  const filteredFiles = useMemo(() => {
+    if (!searchQuery) return currentFolderFiles
+    return currentFolderFiles.filter((file) => file.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  }, [currentFolderFiles, searchQuery])
 
   const handleNavigate = (path: string) => {
     setCurrentPath(path)
+    setSearchQuery("") // Clear search when navigating
   }
 
   const handleGoBack = () => {
@@ -40,7 +56,10 @@ export default function Files() {
 
   const handleFolderOpen = (file: FileItem) => {
     if (file.type === "folder") {
-      setCurrentPath(file.path)
+      // Use the file's path directly as the new current path
+      const newPath = file.path.startsWith("/") ? file.path : `/${file.path}`
+      setCurrentPath(newPath)
+      setSearchQuery("")
     }
   }
 
@@ -79,7 +98,7 @@ export default function Files() {
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
             <Input
-              placeholder="Search files and folders..."
+              placeholder="Search in current folder..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10 bg-slate-700 border-slate-600 text-white placeholder-slate-500"
@@ -112,25 +131,29 @@ export default function Files() {
           >
             <FolderPlus className="h-16 w-16 text-slate-600 mb-4" />
             <h3 className="text-xl font-semibold text-white mb-2">
-              {currentPath === "/" ? "No files yet" : "This folder is empty"}
+              {searchQuery ? "No matching files" : currentPath === "/" ? "No files yet" : "This folder is empty"}
             </h3>
-            <p className="text-slate-400 mb-6">Upload your first file or create a folder to get started</p>
-            <div className="flex gap-3">
-              <Button
-                onClick={() => setShowCreateFolder(true)}
-                className="bg-slate-700 hover:bg-slate-600 text-white gap-2"
-              >
-                <FolderPlus className="h-4 w-4" />
-                Create Folder
-              </Button>
-              <Button
-                onClick={() => setShowUploadZone(true)}
-                className="bg-blue-600 hover:bg-blue-700 text-white gap-2"
-              >
-                <Upload className="h-4 w-4" />
-                Upload Files
-              </Button>
-            </div>
+            <p className="text-slate-400 mb-6">
+              {searchQuery ? "Try a different search term" : "Upload your first file or create a folder to get started"}
+            </p>
+            {!searchQuery && (
+              <div className="flex gap-3">
+                <Button
+                  onClick={() => setShowCreateFolder(true)}
+                  className="bg-slate-700 hover:bg-slate-600 text-white gap-2"
+                >
+                  <FolderPlus className="h-4 w-4" />
+                  Create Folder
+                </Button>
+                <Button
+                  onClick={() => setShowUploadZone(true)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white gap-2"
+                >
+                  <Upload className="h-4 w-4" />
+                  Upload Files
+                </Button>
+              </div>
+            )}
           </motion.div>
         ) : (
           <AnimatePresence mode="wait">
@@ -142,31 +165,17 @@ export default function Files() {
               transition={{ duration: 0.2 }}
             >
               {viewMode === "grid" ? (
-                <FileGrid
-                  files={filteredFiles}
-                  onFolderOpen={handleFolderOpen} // Pass folder open callback
-                />
+                <FileGrid files={filteredFiles} onFolderOpen={handleFolderOpen} />
               ) : (
-                <FileList
-                  files={filteredFiles}
-                  onFolderOpen={handleFolderOpen} // Pass folder open callback
-                />
+                <FileList files={filteredFiles} onFolderOpen={handleFolderOpen} />
               )}
             </motion.div>
           </AnimatePresence>
         )}
       </div>
 
-      <UploadZone
-        open={showUploadZone}
-        onOpenChange={setShowUploadZone}
-        currentPath={currentPath} // Pass current path
-      />
-      <CreateFolderDialog
-        open={showCreateFolder}
-        onOpenChange={setShowCreateFolder}
-        parentPath={currentPath} // Pass current path as parent
-      />
+      <UploadZone open={showUploadZone} onOpenChange={setShowUploadZone} currentPath={currentPath} />
+      <CreateFolderDialog open={showCreateFolder} onOpenChange={setShowCreateFolder} parentPath={currentPath} />
     </div>
   )
 }

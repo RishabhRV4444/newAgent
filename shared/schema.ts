@@ -41,3 +41,29 @@ export type InsertFileItem = z.infer<typeof insertFileItemSchema>;
 export type RenameFile = z.infer<typeof renameFileSchema>;
 export type CreateFolder = z.infer<typeof createFolderSchema>;
 export type StorageInfo = z.infer<typeof storageInfoSchema>;
+
+export const shareLinkSchema = z.object({
+  id: z.string(),
+  fileId: z.string(),
+  fileName: z.string(),
+  fileMimeType: z.string().optional(),
+  shareToken: z.string(),
+  tunnelUrl: z.string().nullable(),
+  expiresAt: z.string().nullable(),
+  createdAt: z.string(),
+  isActive: z.boolean(),
+});
+
+export const createShareSchema = z.object({
+  fileId: z.string(),
+  duration: z.enum(['1h', '6h', '24h', '7d', '30d', 'never']),
+});
+
+export const insertShareLinkSchema = shareLinkSchema.omit({
+  id: true,
+  createdAt: true,
+});
+
+export type ShareLink = z.infer<typeof shareLinkSchema>;
+export type InsertShareLink = z.infer<typeof insertShareLinkSchema>;
+export type CreateShare = z.infer<typeof createShareSchema>;

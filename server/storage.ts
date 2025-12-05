@@ -1,19 +1,8 @@
-import { type FileItem, type CreateFolder, type StorageInfo } from "@/shared/schema";
-import { randomUUID } from "crypto";
+import { type FileItem, type CreateFolder, type StorageInfo, type ShareLink, type CreateShare } from "@shared/schema";
+import { randomUUID, randomBytes } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
 import os from "os";
-
-const getUploadsDir = (): string => {
-  const customPath = process.env.AREVEI_STORAGE_PATH;
-  if (customPath) {
-    return path.resolve(customPath);
-  }
-  
-  // Default to ~/.arevei-cloud/uploads
-  const homeDir = os.homedir();
-  return path.join(homeDir, ".arevei-cloud", "uploads");
-};
 
 function sanitizePathSegment(segment: string): string {
   if (!segment || typeof segment !== "string") {
@@ -64,10 +53,40 @@ function sanitizeParentPath(parentPath: string): string {
   return "/" + segments.join("/");
 }
 
+const getUploadsDir = (): string => {
+  const customPath = process.env.AREVEI_STORAGE_PATH;
+  if (customPath) {
+    return path.resolve(customPath);
+  }
+  
+  // Default to ~/.arevei-cloud/uploads
+  const homeDir = os.homedir();
+  return path.join(homeDir, ".arevei-cloud", "uploads");
+};
+
 const UPLOADS_DIR = getUploadsDir();
 const METADATA_FILE = path.join(UPLOADS_DIR, "files.json");
-const CONFIG_FILE = path.join(path.dirname(UPLOADS_DIR), "config.json");
+const SHARES_FILE = path.join(UPLOADS_DIR, "shares.json");
 const MAX_STORAGE_BYTES = 10 * 1024 * 1024 * 1024; // 10 GB
+
+function generateShareToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+function calculateExpiration(duration: CreateShare['duration']): string | null {
+  if (duration === 'never') return null;
+  
+  const now = new Date();
+  const durationMap: Record<string, number> = {
+    '1h': 60 * 60 * 1000,
+    '6h': 6 * 60 * 60 * 1000,
+    '24h': 24 * 60 * 60 * 1000,
+    '7d': 7 * 24 * 60 * 60 * 1000,
+    '30d': 30 * 24 * 60 * 60 * 1000,
+  };
+  
+  return new Date(now.getTime() + durationMap[duration]).toISOString();
+}
 
 export interface IStorage {
   getAllFiles(): Promise<FileItem[]>;
@@ -78,11 +97,17 @@ export interface IStorage {
   deleteFile(id: string): Promise<void>;
   getStorageInfo(): Promise<StorageInfo>;
   initialize(): Promise<void>;
-  getStoragePath(): string;
+  getAllShares(): Promise<ShareLink[]>;
+  getShareByToken(token: string): Promise<ShareLink | undefined>;
+  getShareByFileId(fileId: string): Promise<ShareLink | undefined>;
+  createShare(data: CreateShare): Promise<ShareLink>;
+  deleteShare(id: string): Promise<void>;
+  cleanExpiredShares(): Promise<void>;
 }
 
 export class FileStorage implements IStorage {
   private files: Map<string, FileItem> = new Map();
+  private shares: Map<string, ShareLink> = new Map();
   private initialized = false;
 
   async initialize(): Promise<void> {
@@ -90,16 +115,6 @@ export class FileStorage implements IStorage {
 
     try {
       await fs.mkdir(UPLOADS_DIR, { recursive: true });
-      
-      const configDir = path.dirname(UPLOADS_DIR);
-      const configExists = await this.fileExists(CONFIG_FILE);
-      if (!configExists) {
-        await fs.writeFile(CONFIG_FILE, JSON.stringify({
-          version: "1.0",
-          createdAt: new Date().toISOString(),
-          storagePath: UPLOADS_DIR,
-        }, null, 2));
-      }
       
       try {
         const data = await fs.readFile(METADATA_FILE, "utf-8");
@@ -127,20 +142,20 @@ export class FileStorage implements IStorage {
         await this.saveMetadata();
       }
 
+      try {
+        const sharesData = await fs.readFile(SHARES_FILE, "utf-8");
+        const sharesArray: ShareLink[] = JSON.parse(sharesData);
+        this.shares = new Map(sharesArray.map(s => [s.id, s]));
+      } catch (error) {
+        await this.saveSharesMetadata();
+      }
+
+      await this.cleanExpiredShares();
+
       this.initialized = true;
-      console.log(`Storage initialized at: ${UPLOADS_DIR}`);
     } catch (error) {
       console.error("Failed to initialize storage:", error);
       throw error;
-    }
-  }
-
-  private async fileExists(filePath: string): Promise<boolean> {
-    try {
-      await fs.access(filePath);
-      return true;
-    } catch {
-      return false;
     }
   }
 
@@ -258,6 +273,9 @@ export class FileStorage implements IStorage {
 
     return updatedFile;
   }
+  getStoragePath(): string {
+    return UPLOADS_DIR;
+  }
 
   async deleteFile(id: string): Promise<void> {
     await this.initialize();
@@ -300,8 +318,122 @@ export class FileStorage implements IStorage {
     };
   }
 
-  getStoragePath(): string {
-    return UPLOADS_DIR;
+  private async saveSharesMetadata(): Promise<void> {
+    const sharesArray = Array.from(this.shares.values());
+    await fs.writeFile(SHARES_FILE, JSON.stringify(sharesArray, null, 2));
+  }
+
+  async getAllShares(): Promise<ShareLink[]> {
+    await this.initialize();
+    return Array.from(this.shares.values())
+      .filter(s => s.isActive)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async getShareByToken(token: string): Promise<ShareLink | undefined> {
+    await this.initialize();
+    return Array.from(this.shares.values()).find(s => s.shareToken === token && s.isActive);
+  }
+
+  async getShareByFileId(fileId: string): Promise<ShareLink | undefined> {
+    await this.initialize();
+    console.log(Array.from(this.shares.values()).find(s => s.fileId === fileId && s.isActive))
+    return Array.from(this.shares.values()).find(s => s.fileId === fileId && s.isActive);
+  }
+
+  async createShare(data: CreateShare): Promise<ShareLink> {
+    await this.initialize();
+
+    const file = this.files.get(data.fileId);
+    if (!file) {
+      throw new Error("File not found");
+    }
+
+    if (file.type === "folder") {
+      throw new Error("Cannot share folders, only files");
+    }
+
+    const existingShare = await this.getShareByFileId(data.fileId);
+    if (existingShare) {
+      throw new Error("File is already being shared");
+    }
+
+    const now = new Date().toISOString();
+    const share: ShareLink = {
+      id: randomUUID(),
+      fileId: data.fileId,
+      fileName: file.name,
+      fileMimeType: file.mimeType,
+      shareToken: generateShareToken(),
+      tunnelUrl: null,
+      expiresAt: calculateExpiration(data.duration),
+      createdAt: now,
+      isActive: true,
+    };
+
+    this.shares.set(share.id, share);
+    await this.saveSharesMetadata();
+
+    return share;
+  }
+
+  async updateShare(id: string, updates: Partial<Pick<ShareLink, 'isActive' | 'expiresAt' | 'tunnelUrl'>>): Promise<ShareLink> {
+    await this.initialize();
+
+    const share = this.shares.get(id);
+    if (!share) {
+      throw new Error("Share not found");
+    }
+
+    const updatedShare: ShareLink = {
+      ...share,
+      ...updates,
+    };
+
+    this.shares.set(id, updatedShare);
+    await this.saveSharesMetadata();
+
+    return updatedShare;
+  }
+
+  async deleteShare(id: string): Promise<void> {
+    await this.initialize();
+
+    const share = this.shares.get(id);
+    if (!share) {
+      throw new Error("Share not found");
+    }
+
+    share.isActive = false;
+    this.shares.set(id, share);
+    await this.saveSharesMetadata();
+  }
+
+  async cleanExpiredShares(): Promise<void> {
+    const now = new Date();
+    let cleaned = false;
+
+    const entries = Array.from(this.shares.entries());
+    for (const [id, share] of entries) {
+      if (share.isActive && share.expiresAt && new Date(share.expiresAt) <= now) {
+        share.isActive = false;
+        this.shares.set(id, share);
+        cleaned = true;
+        console.log(`Cleaned expired share: ${share.fileName}`);
+      }
+    }
+
+    if (cleaned) {
+      await this.saveSharesMetadata();
+    }
+  }
+
+  getFilePath(fileId: string): string | null {
+    const file = this.files.get(fileId);
+    if (!file) return null;
+    
+    const pathSegments = file.path.replace(/^\//, "").split("/").filter(Boolean);
+    return path.join(UPLOADS_DIR, ...pathSegments);
   }
 }
 

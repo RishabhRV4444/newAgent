@@ -4,20 +4,20 @@ import multer from "multer"
 import path from "path"
 import { promises as fs } from "fs"
 import { storage } from "./storage"
-import { createFolderSchema, renameFileSchema } from "@shared/schema"
+import { createFolderSchema, renameFileSchema,createShareSchema } from "@shared/schema"
 import {
   createUser,
   findUserByUsername,
   verifyPassword,
   requireAuth,
-  type AuthenticatedRequest,
+
   findUserById,
 } from "./auth"
 import { signupSchema, loginSchema } from "@shared/auth-schema"
 import { shareManager } from "./sharing"
 import crypto from "crypto"
-
-let UPLOADS_DIR: string
+import { ngrokManager } from "./ngrok-manager"
+import { ngrokService } from "./ngrokService";
 
 declare module "express-session" {
   interface SessionData {
@@ -25,12 +25,36 @@ declare module "express-session" {
   }
 }
 
+declare global {
+  namespace Express {
+    interface Request {
+      uploadParentPath?: string
+    }
+  }
+}
+
+let UPLOADS_DIR: string
+
+const storagePathMiddleware = (req: any, res: any, next: any) => {
+  req.uploadParentPath = (req.body?.parentPath || req.query?.parentPath || "/").toString()
+  next()
+}
+
 const getMullerStorage = () => {
   const multerStorage = multer.diskStorage({
-    destination: async (_req, _file, cb) => {
+    destination: async (req: any, _file, cb) => {
       UPLOADS_DIR = storage.getStoragePath()
-      await fs.mkdir(UPLOADS_DIR, { recursive: true })
-      cb(null, UPLOADS_DIR)
+
+      const parentPath = req.uploadParentPath || "/"
+
+      // Create the full destination path including parent folder
+      let destPath = UPLOADS_DIR
+      if (parentPath && parentPath !== "" && parentPath !== "/") {
+        destPath = path.join(UPLOADS_DIR, parentPath)
+      }
+
+      await fs.mkdir(destPath, { recursive: true })
+      cb(null, destPath)
     },
     filename: (_req, file, cb) => {
       const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`
@@ -47,7 +71,6 @@ const getMullerStorage = () => {
     },
   })
 }
-
 export async function registerRoutes(app: Express): Promise<Server> {
   await storage.initialize()
   UPLOADS_DIR = storage.getStoragePath()
@@ -131,7 +154,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     })
   })
 
-  app.get("/api/auth/me", requireAuth as any, async (req, res) => {
+  app.get("/api/auth/me", async (req: any, res) => {
     try {
       if (!req.session.userId) {
         return res.status(401).json({ error: "Not authenticated" })
@@ -178,6 +201,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
+  
+
   app.get("/api/files", requireAuth as any, async (_req, res) => {
     try {
       const files = await storage.getAllFiles()
@@ -209,25 +234,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  app.post("/api/upload", requireAuth as any, upload.array("files", 10), async (req, res) => {
+   app.post("/api/upload", requireAuth as any, storagePathMiddleware, upload.array("files", 10), async (req, res) => {
     try {
       const files = req.files as Express.Multer.File[]
+      let parentPath = req.uploadParentPath || "/"
+      parentPath = parentPath.toString()
 
       if (!files || files.length === 0) {
         return res.status(400).json({ error: "No files uploaded" })
       }
 
+      const normalizedParentPath =
+        parentPath === "/" || parentPath === "" ? "/" : `/${parentPath.replace(/^\/+/, "").replace(/\/+$/, "")}`
+
+      console.log(`[Upload] Processing ${files.length} files to parentPath: ${normalizedParentPath}`)
+
       const createdFiles = await Promise.all(
-        files.map((file) =>
-          storage.createFile({
+        files.map((file) => {
+          const relativePath =
+            normalizedParentPath === "/" ? file.filename : `${normalizedParentPath.replace(/^\//, "")}/${file.filename}`
+
+          console.log(`[Upload] File: ${file.originalname} -> Path: ${relativePath}`)
+
+          return storage.createFile({
             name: file.originalname,
             type: "file",
             mimeType: file.mimetype,
             size: file.size,
-            path: file.filename,
-            parentPath: "/",
-          }),
-        ),
+            path: relativePath,
+            parentPath: normalizedParentPath,
+          })
+        }),
       )
 
       res.json({
@@ -300,187 +337,183 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Create a share link for a file
-  app.post("/api/shares", requireAuth as any, async (req: any, res) => {
-    try {
-      const { fileId, password, expiresAt, maxDownloads } = req.body
+  app.get("/api/checkshare/:fileId", async (req, res) => {
+  try {
+      const share = await storage.getShareByFileId(req.params.fileId);
+      res.json({ isShared: !!share, share: share || null });
+    } catch (error) {
+      console.error("Error checking share:", error);
+      res.status(500).json({ error: "Failed to check share status" });
+    }
+});
 
-      if (!fileId) {
-        return res.status(400).json({ error: "File ID is required" })
+ app.get("/api/shares", async (_req, res) => {
+    try {
+      const shares = await storage.getAllShares();
+      res.json(shares);
+    } catch (error) {
+      console.error("Error getting shares:", error);
+      res.status(500).json({ error: "Failed to get shares" });
+    }
+  });
+
+   app.post("/api/shares", async (req, res) => {
+    try {
+      const result = createShareSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ 
+          error: "Invalid request", 
+          details: result.error.issues 
+        });
       }
 
-      const file = await storage.getFileById(fileId)
-      if (!file) {
-        return res.status(404).json({ error: "File not found" })
+      const existingShare = await storage.getShareByFileId(result.data.fileId);
+      if (existingShare && existingShare.isActive && existingShare.tunnelUrl) {
+        return res.json(existingShare);
       }
 
-      const share = await shareManager.createShare(fileId, req.session.userId!, {
-        password,
-        expiresAt,
-        maxDownloads,
-      })
-
-      res.json({
-        share: {
-          id: share.id,
-          shareToken: share.shareToken,
-          fileId: share.fileId,
-          password: !!share.password,
-          expiresAt: share.expiresAt,
-          maxDownloads: share.maxDownloads,
-          createdAt: share.createdAt,
-        },
-      })
+      const share = await storage.createShare(result.data);
+      
+      try {
+        const tunnelUrl = await ngrokService.startTunnel(share.id);
+        const updatedShare = await storage.updateShare(share.id, { tunnelUrl });
+        res.json(updatedShare);
+      } catch (tunnelError: any) {
+        await storage.deleteShare(share.id);
+        console.error("Error starting ngrok tunnel:", tunnelError);
+        
+        if (tunnelError.message?.includes("NGROK_AUTHTOKEN")) {
+          return res.status(400).json({ 
+            error: "NGROK_AUTHTOKEN is required. Please add your ngrok auth token in the Secrets tab." 
+          });
+        }
+        
+        throw tunnelError;
+      }
     } catch (error: any) {
-      console.error("Error creating share:", error)
-      res.status(500).json({ error: error.message || "Failed to create share" })
+      console.error("Error creating share:", error);
+      res.status(500).json({ error: error.message || "Failed to create share" });
     }
-  })
+  });
 
-  // Get all shares for current user
-  app.get("/api/shares", requireAuth as any, async (req: any, res) => {
+
+  app.delete("/api/shares/:id", async (req, res) => {
     try {
-      const shares = await shareManager.getUserShares(req.session.userId!)
-
-      res.json({
-        shares: shares.map((s) => ({
-          id: s.id,
-          fileId: s.fileId,
-          shareToken: s.shareToken,
-          password: !!s.password,
-          expiresAt: s.expiresAt,
-          maxDownloads: s.maxDownloads,
-          downloadCount: s.downloadCount,
-          createdAt: s.createdAt,
-        })),
-      })
+      await ngrokService.stopTunnel(req.params.id);
+      res.json({ message: "Share stopped successfully" });
     } catch (error: any) {
-      console.error("Error fetching shares:", error)
-      res.status(500).json({ error: error.message || "Failed to fetch shares" })
+      console.error("Error stopping share:", error);
+      
+      if (error.message === "Share not found") {
+        return res.status(404).json({ error: "Share not found" });
+      }
+      
+      res.status(500).json({ error: error.message || "Failed to stop share" });
     }
-  })
+  });
 
-  // Delete a share
-  app.delete("/api/shares/:shareId", requireAuth as any, async (req: any, res) => {
+  app.get("/share/:token", async (req, res) => {
     try {
-      const share = await shareManager.getShareById(req.params.shareId)
+      const share = await storage.getShareByToken(req.params.token);
+      
       if (!share) {
-        return res.status(404).json({ error: "Share not found" })
+        return res.status(404).send(`
+          <!DOCTYPE html>
+          <html>
+          <head><title>Share Not Found</title></head>
+          <body style="font-family: system-ui; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0;">
+            <div style="text-align: center;">
+              <h1>Share Not Found</h1>
+              <p>This file share link is invalid or has expired.</p>
+            </div>
+          </body>
+          </html>
+        `);
       }
 
-      if (share.userId !== req.session.userId) {
-        return res.status(403).json({ error: "Unauthorized" })
+      if (share.expiresAt && new Date(share.expiresAt) <= new Date()) {
+        await ngrokService.stopTunnel(share.id);
+        return res.status(410).send(`
+          <!DOCTYPE html>
+          <html>
+          <head><title>Share Expired</title></head>
+          <body style="font-family: system-ui; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0;">
+            <div style="text-align: center;">
+              <h1>Share Expired</h1>
+              <p>This file share link has expired.</p>
+            </div>
+          </body>
+          </html>
+        `);
       }
 
-      await shareManager.deleteShare(req.params.shareId)
-      res.json({ message: "Share deleted successfully" })
-    } catch (error: any) {
-      console.error("Error deleting share:", error)
-      res.status(500).json({ error: error.message || "Failed to delete share" })
+      const filePath = storage.getFilePath(share.fileId);
+      if (!filePath) {
+        return res.status(404).send('File not found');
+      }
+
+      res.setHeader('Content-Disposition', `inline; filename="${share.fileName}"`);
+      if (share.fileMimeType) {
+        res.setHeader('Content-Type', share.fileMimeType);
+      }
+      
+      res.sendFile(filePath);
+    } catch (error) {
+      console.error("Error serving shared file:", error);
+      res.status(500).send('Failed to serve file');
+    }
+  });
+
+  app.get("/api/ngrok-url", requireAuth as any, async (_req, res) => {
+    try {
+      const ngrokUrl = process.env.NGROK_URL || process.env.PUBLIC_URL || null
+      res.json({ ngrokUrl })
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get ngrok URL" })
     }
   })
 
-  // Download file via share token (public endpoint)
-  app.get("/api/public/share/:shareToken/download", async (req, res) => {
+  app.post("/api/ngrok/start", requireAuth as any, async (_req, res) => {
     try {
-      const { shareToken } = req.params
-      const { password } = req.query
-
-      const share = await shareManager.getShareByToken(shareToken)
-      if (!share) {
-        return res.status(404).json({ error: "Share not found or expired" })
-      }
-
-      // Verify password if required
-      if (share.password) {
-        if (!password) {
-          return res.status(403).json({ error: "Password required" })
-        }
-
-        const hashedPassword = crypto
-          .createHash("sha256")
-          .update(password as string)
-          .digest("hex")
-        if (hashedPassword !== share.password) {
-          return res.status(403).json({ error: "Invalid password" })
-        }
-      }
-
-      const file = await storage.getFileById(share.fileId)
-      if (!file) {
-        return res.status(404).json({ error: "File not found" })
-      }
-
-      const pathSegments = file.path.replace(/^\//, "").split("/").filter(Boolean)
-      const resolvedPath = path.resolve(storage.getStoragePath(), ...pathSegments)
-
-      if (!resolvedPath.startsWith(storage.getStoragePath())) {
-        return res.status(403).json({ error: "Access denied" })
-      }
-
-      // Increment download count
-      await shareManager.incrementDownloadCount(share.id)
-
-      // Send file
-      res.setHeader("Content-Disposition", `attachment; filename="${file.name}"`)
-      res.sendFile(resolvedPath)
-    } catch (error: any) {
-      console.error("Error downloading shared file:", error)
-      res.status(500).json({ error: error.message || "Failed to download file" })
-    }
-  })
-
-  // Get share info (public endpoint)
-  app.post("/api/public/share/:shareToken/info", async (req, res) => {
-    try {
-      const { shareToken } = req.params
-      const { password } = req.body
-
-      const share = await shareManager.getShareByToken(shareToken)
-      if (!share) {
-        return res.status(404).json({ error: "Share not found or expired" })
-      }
-
-      // Verify password if required
-      if (share.password) {
-        if (!password) {
-          return res.status(403).json({ error: "Password required" })
-        }
-
-        const hashedPassword = crypto
-          .createHash("sha256")
-          .update(password as string)
-          .digest("hex")
-        if (hashedPassword !== share.password) {
-          return res.status(403).json({ error: "Invalid password" })
-        }
-      }
-
-      const file = await storage.getFileById(share.fileId)
-      if (!file) {
-        return res.status(404).json({ error: "File not found" })
-      }
-
+      const url = await ngrokManager.startTunnel()
       res.json({
-        file: {
-          id: file.id,
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          mimeType: file.mimeType,
-        },
-        share: {
-          downloadCount: share.downloadCount,
-          maxDownloads: share.maxDownloads,
-          expiresAt: share.expiresAt,
-        },
+        url,
+        message: "ngrok tunnel started successfully",
       })
     } catch (error: any) {
-      console.error("Error fetching share info:", error)
-      res.status(500).json({ error: error.message || "Failed to fetch share info" })
+      console.error("Error starting ngrok:", error)
+      res.status(500).json({
+        error: error.message || "Failed to start ngrok tunnel",
+        hint: "Make sure ngrok is installed globally: npm install -g ngrok",
+      })
+    }
+  })
+
+  app.post("/api/ngrok/stop", requireAuth as any, async (_req, res) => {
+    try {
+      await ngrokManager.stopTunnel()
+      res.json({ message: "ngrok tunnel stopped successfully" })
+    } catch (error: any) {
+      console.error("Error stopping ngrok:", error)
+      res.status(500).json({ error: error.message || "Failed to stop ngrok tunnel" })
+    }
+  })
+
+  app.get("/api/ngrok/status", requireAuth as any, async (_req, res) => {
+    try {
+      const url = ngrokManager.getUrl()
+      const isRunning = ngrokManager.isRunning()
+      res.json({
+        isRunning,
+        url: isRunning ? url : null,
+      })
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to get ngrok status" })
     }
   })
 
   const httpServer = createServer(app)
+  const port = parseInt(process.env.PORT || "5000", 10);
+  await ngrokService.initialize(port);
   return httpServer
 }

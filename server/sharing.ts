@@ -2,6 +2,7 @@ import { randomUUID } from "crypto"
 import { promises as fs } from "fs"
 import path from "path"
 import crypto from "crypto"
+import os from "os"
 
 interface ShareRecord {
   id: string
@@ -10,30 +11,38 @@ interface ShareRecord {
   shareToken: string
   password?: string
   expiresAt?: string
+  availableFrom?: string
+  availableUntil?: string
   maxDownloads?: number
   downloadCount: number
   createdAt: string
 }
 
-const SHARES_FILE = path.join(
-  path.dirname(process.env.AREVEI_STORAGE_PATH || process.env.HOME || "/root"),
-  ".arevei-cloud",
-  "shares.json",
-)
+const getSharesFilePath = (): string => {
+  const homeDir = os.homedir()
+  return path.join(homeDir, ".arevei-cloud", "shares.json")
+}
 
 export class ShareManager {
   private shares: Map<string, ShareRecord> = new Map()
   private initialized = false
+  private sharesFile: string
+
+  constructor() {
+    this.sharesFile = getSharesFilePath()
+  }
 
   async initialize(): Promise<void> {
     if (this.initialized) return
 
     try {
-      const shareDir = path.dirname(SHARES_FILE)
+      const shareDir = path.dirname(this.sharesFile)
+      console.log(`Initializing share manager at: ${shareDir}`)
+
       await fs.mkdir(shareDir, { recursive: true })
 
       try {
-        const data = await fs.readFile(SHARES_FILE, "utf-8")
+        const data = await fs.readFile(this.sharesFile, "utf-8")
         const sharesArray: ShareRecord[] = JSON.parse(data)
         this.shares = new Map(sharesArray.map((s) => [s.id, s]))
       } catch {
@@ -41,7 +50,7 @@ export class ShareManager {
       }
 
       this.initialized = true
-      console.log("Share manager initialized")
+      console.log("Share manager initialized successfully")
     } catch (error) {
       console.error("Failed to initialize share manager:", error)
       throw error
@@ -50,15 +59,21 @@ export class ShareManager {
 
   private async saveShares(): Promise<void> {
     const sharesArray = Array.from(this.shares.values())
-    const shareDir = path.dirname(SHARES_FILE)
+    const shareDir = path.dirname(this.sharesFile)
     await fs.mkdir(shareDir, { recursive: true })
-    await fs.writeFile(SHARES_FILE, JSON.stringify(sharesArray, null, 2))
+    await fs.writeFile(this.sharesFile, JSON.stringify(sharesArray, null, 2))
   }
 
   async createShare(
     fileId: string,
     userId: string,
-    options?: { password?: string; expiresAt?: string; maxDownloads?: number },
+    options?: {
+      password?: string
+      expiresAt?: string
+      availableFrom?: string
+      availableUntil?: string
+      maxDownloads?: number
+    },
   ): Promise<ShareRecord> {
     await this.initialize()
 
@@ -72,6 +87,8 @@ export class ShareManager {
       shareToken,
       password: options?.password,
       expiresAt: options?.expiresAt,
+      availableFrom: options?.availableFrom,
+      availableUntil: options?.availableUntil,
       maxDownloads: options?.maxDownloads,
       downloadCount: 0,
       createdAt: now,
@@ -92,12 +109,20 @@ export class ShareManager {
       return undefined
     }
 
-    // Check if share has expired
-    if (share.expiresAt && new Date(share.expiresAt) < new Date()) {
+    const now = new Date()
+
+    if (share.expiresAt && new Date(share.expiresAt) < now) {
       return undefined
     }
 
-    // Check download limit
+    if (share.availableFrom && new Date(share.availableFrom) > now) {
+      return undefined
+    }
+
+    if (share.availableUntil && new Date(share.availableUntil) < now) {
+      return undefined
+    }
+
     if (share.maxDownloads && share.downloadCount >= share.maxDownloads) {
       return undefined
     }
