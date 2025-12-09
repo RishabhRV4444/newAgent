@@ -55,7 +55,7 @@ function sanitizeParentPath(parentPath: string): string {
 
 function getAreveiStoragePath(): string {
   const homeDir = os.homedir();
-  return path.join(homeDir, "AREVEI");
+  return path.join(homeDir, process.env.AREVEI_STORAGE_PATH || "AREVEI");
 }
 
 const AREVEI_BASE_DIR = getAreveiStoragePath();

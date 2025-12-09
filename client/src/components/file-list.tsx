@@ -1,11 +1,9 @@
-"use client"
-
-import { useState } from "react"
-import { motion } from "framer-motion"
+import { useState } from "react";
+import { motion } from "framer-motion";
 import {
   FileText,
   Folder,
-  ImageIcon,
+  Image,
   FileVideo,
   FileArchive,
   File,
@@ -13,72 +11,88 @@ import {
   Pencil,
   Trash2,
   Eye,
+  Share2,
   FolderOpen,
-} from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { RenameDialog } from "./rename-dialog"
-import { DeleteDialog } from "./delete-dialog"
-import { FilePreviewModal } from "./file-preview-modal"
-import type { FileItem } from "@shared/schema"
-import { formatDistanceToNow } from "date-fns"
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { RenameDialog } from "./rename-dialog";
+import { DeleteDialog } from "./delete-dialog";
+import { FilePreviewModal } from "./file-preview-modal";
+import { ShareDialog } from "./share-dialog";
+import type { FileItem } from "@shared/schema";
+import { formatDistanceToNow } from "date-fns";
 
 interface FileListProps {
-  files: FileItem[]
-  onFolderOpen?: (file: FileItem) => void // Added folder open callback
+  files: FileItem[];
+  onFolderClick?: (folder: FileItem) => void;
 }
 
-export function FileList({ files, onFolderOpen }: FileListProps) {
-  const [selectedFile, setSelectedFile] = useState<FileItem | null>(null)
-  const [renameFile, setRenameFile] = useState<FileItem | null>(null)
-  const [deleteFile, setDeleteFile] = useState<FileItem | null>(null)
+export function FileList({ files, onFolderClick }: FileListProps) {
+  const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
+  const [renameFile, setRenameFile] = useState<FileItem | null>(null);
+  const [deleteFile, setDeleteFile] = useState<FileItem | null>(null);
+  const [shareFile, setShareFile] = useState<FileItem | null>(null);
 
   const getIcon = (file: FileItem) => {
     if (file.type === "folder") {
-      return <Folder className="h-5 w-5 text-blue-400" /> // Enhanced colors
+      return <Folder className="h-5 w-5 text-primary" />;
     }
 
-    const mime = file.mimeType || ""
+    const mime = file.mimeType || "";
     if (mime.startsWith("image/")) {
-      return <ImageIcon className="h-5 w-5 text-purple-400" />
+      return <Image className="h-5 w-5 text-chart-2" />;
     }
     if (mime.startsWith("video/")) {
-      return <FileVideo className="h-5 w-5 text-red-400" />
+      return <FileVideo className="h-5 w-5 text-chart-3" />;
     }
     if (mime === "application/pdf") {
-      return <FileText className="h-5 w-5 text-red-500" />
+      return <FileText className="h-5 w-5 text-destructive" />;
     }
     if (mime.includes("zip") || mime.includes("archive")) {
-      return <FileArchive className="h-5 w-5 text-yellow-400" />
+      return <FileArchive className="h-5 w-5 text-chart-4" />;
     }
-    return <File className="h-5 w-5 text-slate-500" />
-  }
+    return <File className="h-5 w-5 text-muted-foreground" />;
+  };
 
   const formatSize = (bytes: number) => {
-    if (bytes === 0) return "-"
-    const units = ["B", "KB", "MB", "GB"]
-    const i = Math.floor(Math.log(bytes) / Math.log(1024))
-    return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`
-  }
+    if (bytes === 0) return "-";
+    const units = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
+  };
 
   const getFileType = (file: FileItem) => {
-    if (file.type === "folder") return "Folder"
-    const mime = file.mimeType || ""
-    if (mime.startsWith("image/")) return "Image"
-    if (mime.startsWith("video/")) return "Video"
-    if (mime === "application/pdf") return "PDF"
-    if (mime.includes("zip") || mime.includes("archive")) return "Archive"
-    return "File"
-  }
+    if (file.type === "folder") return "Folder";
+    const mime = file.mimeType || "";
+    if (mime.startsWith("image/")) return "Image";
+    if (mime.startsWith("video/")) return "Video";
+    if (mime === "application/pdf") return "PDF";
+    if (mime.includes("zip") || mime.includes("archive")) return "Archive";
+    return "File";
+  };
 
-  const canPreview = (file: FileItem) =>
-    file.type === "file" && (file.mimeType?.startsWith("image/") || file.mimeType === "application/pdf")
+  const canPreview = (file: FileItem) => 
+    file.type === "file" && 
+    (file.mimeType?.startsWith("image/") || file.mimeType === "application/pdf");
 
-  const handleRowClick = (file: FileItem) => {
-    if (file.type === "folder" && onFolderOpen) {
-      onFolderOpen(file)
+  const handleRowClick = (file: FileItem, e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-dropdown-trigger]') || target.closest('[role="menu"]') || target.closest('button')) {
+      return;
     }
-  }
+    
+    if (file.type === "folder" && onFolderClick) {
+      onFolderClick(file);
+    } else if (canPreview(file)) {
+      setSelectedFile(file);
+    }
+  };
 
   return (
     <>
@@ -86,10 +100,10 @@ export function FileList({ files, onFolderOpen }: FileListProps) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="border border-slate-700 rounded-lg overflow-hidden bg-slate-800/50"
+        className="border rounded-lg overflow-hidden"
       >
-        <div className="bg-slate-800 border-b border-slate-700">
-          <div className="grid grid-cols-12 gap-4 p-4 text-sm font-medium text-slate-300">
+        <div className="bg-muted/50">
+          <div className="grid grid-cols-12 gap-4 p-4 text-sm font-medium">
             <div className="col-span-5">Name</div>
             <div className="col-span-2">Type</div>
             <div className="col-span-2">Size</div>
@@ -98,82 +112,103 @@ export function FileList({ files, onFolderOpen }: FileListProps) {
           </div>
         </div>
 
-        <div className="divide-y divide-slate-700">
+        <div className="divide-y">
           {files.map((file, index) => (
             <motion.div
               key={file.id}
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: index * 0.03, duration: 0.2 }}
-              onClick={() => handleRowClick(file)}
-              className={`grid grid-cols-12 gap-4 p-4 items-center transition-colors ${
-                file.type === "folder"
-                  ? "cursor-pointer hover:bg-slate-700 hover:border-l-2 hover:border-l-blue-500"
-                  : "hover:bg-slate-700/50"
+              className={`grid grid-cols-12 gap-4 p-4 hover-elevate items-center cursor-pointer ${
+                file.type === "folder" ? "hover:bg-primary/5" : ""
               }`}
+              onClick={(e) => handleRowClick(file, e)}
               data-testid={`row-file-${file.id}`}
             >
               <div className="col-span-5 flex items-center gap-3 min-w-0">
                 {getIcon(file)}
-                <span
-                  className="truncate font-medium text-slate-200"
+                <span 
+                  className="truncate font-medium" 
                   title={file.name}
                   data-testid={`text-filename-${file.id}`}
                 >
                   {file.name}
                 </span>
               </div>
-              <div className="col-span-2 text-sm text-slate-500">{getFileType(file)}</div>
-              <div className="col-span-2 text-sm text-slate-500">
-                {file.type === "file" ? formatSize(file.size) : "-"}
+              <div className="col-span-2 text-sm text-muted-foreground">
+                {getFileType(file)}
               </div>
-              <div className="col-span-2 text-sm text-slate-500">
+              <div className="col-span-2 text-sm text-muted-foreground">
+                {file.type === "folder" ? "-" : formatSize(file.size)}
+              </div>
+              <div className="col-span-2 text-sm text-muted-foreground">
                 {file.modifiedAt && formatDistanceToNow(new Date(file.modifiedAt), { addSuffix: true })}
               </div>
-              <div className="col-span-1 flex justify-end">
+              <div className="col-span-1 flex justify-end" data-dropdown-trigger>
                 <DropdownMenu>
-                  <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                    <Button
-                      size="icon"
+                  <DropdownMenuTrigger asChild>
+                    <Button 
+                      size="icon" 
                       variant="ghost"
-                      className="text-slate-400 hover:text-slate-200 hover:bg-slate-700"
+                      onClick={(e) => e.stopPropagation()}
                       data-testid={`button-menu-${file.id}`}
                     >
                       <MoreVertical className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="bg-slate-800 border-slate-700">
-                    {file.type === "folder" &&
-                      onFolderOpen && ( // Add open folder option
-                        <DropdownMenuItem
-                          onClick={() => onFolderOpen(file)}
-                          className="text-slate-300 hover:bg-slate-700 cursor-pointer"
-                        >
-                          <FolderOpen className="h-4 w-4 mr-2" />
-                          Open
-                        </DropdownMenuItem>
-                      )}
+                  <DropdownMenuContent align="end">
+                    {file.type === "folder" && onFolderClick && (
+                      <DropdownMenuItem 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onFolderClick(file);
+                        }}
+                        data-testid={`button-open-${file.id}`}
+                      >
+                        <FolderOpen className="h-4 w-4 mr-2" />
+                        Open
+                      </DropdownMenuItem>
+                    )}
                     {canPreview(file) && (
-                      <DropdownMenuItem
-                        onClick={() => setSelectedFile(file)}
-                        className="text-slate-300 hover:bg-slate-700 cursor-pointer"
+                      <DropdownMenuItem 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedFile(file);
+                        }}
                         data-testid={`button-preview-${file.id}`}
                       >
                         <Eye className="h-4 w-4 mr-2" />
                         Preview
                       </DropdownMenuItem>
                     )}
-                    <DropdownMenuItem
-                      onClick={() => setRenameFile(file)}
-                      className="text-slate-300 hover:bg-slate-700 cursor-pointer"
+                    {file.type === "file" && (
+                      <DropdownMenuItem 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShareFile(file);
+                        }}
+                        data-testid={`button-share-${file.id}`}
+                      >
+                        <Share2 className="h-4 w-4 mr-2" />
+                        Share
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRenameFile(file);
+                      }}
                       data-testid={`button-rename-${file.id}`}
                     >
                       <Pencil className="h-4 w-4 mr-2" />
                       Rename
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => setDeleteFile(file)}
-                      className="text-red-400 hover:bg-slate-700 cursor-pointer"
+                    <DropdownMenuItem 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteFile(file);
+                      }}
+                      className="text-destructive"
                       data-testid={`button-delete-${file.id}`}
                     >
                       <Trash2 className="h-4 w-4 mr-2" />
@@ -187,15 +222,29 @@ export function FileList({ files, onFolderOpen }: FileListProps) {
         </div>
       </motion.div>
 
-      <RenameDialog file={renameFile} open={!!renameFile} onOpenChange={(open) => !open && setRenameFile(null)} />
+      <RenameDialog
+        file={renameFile}
+        open={!!renameFile}
+        onOpenChange={(open) => !open && setRenameFile(null)}
+      />
 
-      <DeleteDialog file={deleteFile} open={!!deleteFile} onOpenChange={(open) => !open && setDeleteFile(null)} />
+      <DeleteDialog
+        file={deleteFile}
+        open={!!deleteFile}
+        onOpenChange={(open) => !open && setDeleteFile(null)}
+      />
 
       <FilePreviewModal
         file={selectedFile}
         open={!!selectedFile}
         onOpenChange={(open) => !open && setSelectedFile(null)}
       />
+
+      <ShareDialog
+        file={shareFile}
+        open={!!shareFile}
+        onOpenChange={(open) => !open && setShareFile(null)}
+      />
     </>
-  )
+  );
 }

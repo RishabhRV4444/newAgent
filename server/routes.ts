@@ -167,7 +167,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   
 
-  app.get("/api/storage", requireAuth as any, async (_req, res) => {
+  app.get("/api/storage", async (_req, res) => {
     try {
       const storageInfo = await storage.getStorageInfo()
       res.json(storageInfo)
@@ -211,13 +211,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/upload", upload.array("files", 10), async (req, res) => {
+   app.post("/api/upload", upload.array("files", 10), async (req, res) => {
     try {
       const files = req.files as Express.Multer.File[];
       
       if (!files || files.length === 0) {
         return res.status(400).json({ error: "No files uploaded" });
       }
+
+      const parentPath = (req.body.parentPath as string) || "/";
+      
+      const sanitizedParentPath = parentPath
+        .split("/")
+        .filter(segment => segment && !segment.includes(".."))
+        .join("/");
+      const normalizedParentPath = sanitizedParentPath ? `/${sanitizedParentPath}` : "/";
 
       const createdFiles = await Promise.all(
         files.map((file) =>
@@ -227,7 +235,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             mimeType: file.mimetype,
             size: file.size,
             path: file.filename,
-            parentPath: "/",
+            parentPath: normalizedParentPath,
           })
         )
       );
@@ -241,6 +249,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Failed to upload files" });
     }
   });
+
 
   app.post("/api/folders", async (req, res) => {
     try {

@@ -1,150 +1,135 @@
-"use client"
-
-import type React from "react"
-
-import { useCallback, useState } from "react"
-import { motion, AnimatePresence } from "framer-motion"
-import { Upload, FileText, Loader2, CheckCircle2, AlertCircle, FolderOpen } from "lucide-react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Progress } from "@/components/ui/progress"
-import { useMutation } from "@tanstack/react-query"
-import { queryClient } from "@/lib/queryClient"
-import { useToast } from "@/hooks/use-toast"
+import { useCallback, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Upload, X, FileText, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { useMutation } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface UploadZoneProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  currentPath?: string // Accept current path for uploads
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  parentPath?: string;
 }
 
 interface UploadingFile {
-  file: File
-  progress: number
-  status: "uploading" | "complete" | "error"
-  error?: string
+  file: File;
+  progress: number;
+  status: "uploading" | "complete" | "error";
+  error?: string;
 }
 
-export function UploadZone({ open, onOpenChange, currentPath = "/" }: UploadZoneProps) {
-  const [isDragging, setIsDragging] = useState(false)
-  const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([])
-  const { toast } = useToast()
+export function UploadZone({ open, onOpenChange, parentPath = "/" }: UploadZoneProps) {
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
+  const { toast } = useToast();
 
   const uploadMutation = useMutation({
     mutationFn: async (files: File[]) => {
-      const formData = new FormData()
+      const formData = new FormData();
       files.forEach((file) => {
-        formData.append("files", file)
-      })
-      console.log(`[UploadZone] Uploading to path: ${currentPath}`)
-      formData.append("parentPath", currentPath)
+        formData.append("files", file);
+      });
+      formData.append("parentPath", parentPath);
 
       const res = await fetch("/api/upload", {
         method: "POST",
         body: formData,
         credentials: "include",
-      })
+      });
 
       if (!res.ok) {
-        const text = await res.text()
-        throw new Error(text || res.statusText)
+        const text = await res.text();
+        throw new Error(text || res.statusText);
       }
 
-      return res.json()
+      return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/files"] })
-      queryClient.invalidateQueries({ queryKey: ["/api/storage"] })
+      queryClient.invalidateQueries({ queryKey: ["/api/files"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/storage"] });
       toast({
         title: "Upload complete",
         description: "Your files have been uploaded successfully",
-      })
+      });
       setTimeout(() => {
-        onOpenChange(false)
-        setUploadingFiles([])
-      }, 1500)
+        onOpenChange(false);
+        setUploadingFiles([]);
+      }, 1500);
     },
     onError: (error: any) => {
       toast({
         title: "Upload failed",
         description: error?.message || "Failed to upload files",
         variant: "destructive",
-      })
+      });
     },
-  })
+  });
 
-  const handleFiles = useCallback(
-    (files: FileList | null) => {
-      if (!files || files.length === 0) return
+  const handleFiles = useCallback((files: FileList | null) => {
+    if (!files || files.length === 0) return;
 
-      const fileArray = Array.from(files)
-      const newUploadingFiles: UploadingFile[] = fileArray.map((file) => ({
-        file,
-        progress: 0,
-        status: "uploading" as const,
-      }))
+    const fileArray = Array.from(files);
+    const newUploadingFiles: UploadingFile[] = fileArray.map((file) => ({
+      file,
+      progress: 0,
+      status: "uploading" as const,
+    }));
 
-      setUploadingFiles(newUploadingFiles)
+    setUploadingFiles(newUploadingFiles);
 
-      newUploadingFiles.forEach((_, index) => {
-        const interval = setInterval(() => {
-          setUploadingFiles((prev) => {
-            const updated = [...prev]
-            if (updated[index] && updated[index].progress < 90) {
-              updated[index] = {
-                ...updated[index],
-                progress: updated[index].progress + 10,
-              }
-            }
-            return updated
-          })
-        }, 100)
+    newUploadingFiles.forEach((_, index) => {
+      const interval = setInterval(() => {
+        setUploadingFiles((prev) => {
+          const updated = [...prev];
+          if (updated[index] && updated[index].progress < 90) {
+            updated[index] = {
+              ...updated[index],
+              progress: updated[index].progress + 10,
+            };
+          }
+          return updated;
+        });
+      }, 100);
 
-        setTimeout(() => clearInterval(interval), 900)
-      })
+      setTimeout(() => clearInterval(interval), 900);
+    });
 
-      uploadMutation.mutate(fileArray)
-    },
-    [uploadMutation],
-  )
+    uploadMutation.mutate(fileArray);
+  }, [uploadMutation]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(true)
-  }, [])
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
-  }, [])
+    e.preventDefault();
+    setIsDragging(false);
+  }, []);
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault()
-      setIsDragging(false)
-      handleFiles(e.dataTransfer.files)
-    },
-    [handleFiles],
-  )
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    handleFiles(e.dataTransfer.files);
+  }, [handleFiles]);
 
-  const handleFileSelect = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      handleFiles(e.target.files)
-    },
-    [handleFiles],
-  )
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    handleFiles(e.target.files);
+  }, [handleFiles]);
+
+  const displayPath = parentPath === "/" ? "Home" : parentPath.split("/").pop() || "Home";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl bg-slate-800 border-slate-700" data-testid="dialog-upload">
+      <DialogContent className="sm:max-w-2xl" data-testid="dialog-upload">
         <DialogHeader>
-          <DialogTitle className="text-white">Upload Files</DialogTitle>
-          <div className="flex items-center gap-2 mt-2 text-sm text-blue-400 bg-slate-700/50 px-3 py-2 rounded-md">
-            <FolderOpen className="h-4 w-4" />
-            <span>
-              Uploading to: <strong className="font-mono">{currentPath === "/" ? "Root" : currentPath}</strong>
-            </span>
-          </div>
+          <DialogTitle>Upload Files</DialogTitle>
+          <p className="text-sm text-muted-foreground">
+            Uploading to: <span className="font-medium text-foreground">{displayPath}</span>
+          </p>
         </DialogHeader>
 
         {uploadingFiles.length === 0 ? (
@@ -154,7 +139,7 @@ export function UploadZone({ open, onOpenChange, currentPath = "/" }: UploadZone
             onDrop={handleDrop}
             className={`
               border-2 border-dashed rounded-lg p-12 text-center transition-colors
-              ${isDragging ? "border-blue-400 bg-blue-500/5" : "border-slate-600 bg-slate-700/50"}
+              ${isDragging ? "border-primary bg-primary/2" : "border-border"}
             `}
           >
             <motion.div
@@ -163,15 +148,17 @@ export function UploadZone({ open, onOpenChange, currentPath = "/" }: UploadZone
               transition={{ duration: 0.2 }}
               className="flex flex-col items-center gap-4"
             >
-              <div className="p-4 bg-blue-500/10 rounded-full">
-                <Upload className="h-8 w-8 text-blue-400" />
+              <div className="p-4 bg-primary/10 rounded-full">
+                <Upload className="h-8 w-8 text-primary" />
               </div>
               <div>
-                <p className="text-lg font-semibold text-white mb-1">
+                <p className="text-lg font-semibold mb-1">
                   {isDragging ? "Drop files here" : "Drag and drop files here"}
                 </p>
-                <p className="text-sm text-slate-400 mb-4">or click to browse</p>
-                <Button asChild className="bg-blue-600 hover:bg-blue-700" data-testid="button-browse-files">
+                <p className="text-sm text-muted-foreground mb-4">
+                  or click to browse
+                </p>
+                <Button asChild data-testid="button-browse-files bg-primary">
                   <label className="cursor-pointer">
                     <input
                       type="file"
@@ -196,37 +183,39 @@ export function UploadZone({ open, onOpenChange, currentPath = "/" }: UploadZone
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ delay: index * 0.05 }}
-                  className="border border-slate-700 rounded-lg p-4 bg-slate-700/50"
+                  className="border rounded-lg p-4"
                   data-testid={`upload-item-${index}`}
                 >
                   <div className="flex items-start gap-3">
-                    <FileText className="h-5 w-5 text-blue-400 mt-1" />
+                    <FileText className="h-5 w-5 text-primary mt-1" />
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate text-slate-200" title={uploadFile.file.name}>
+                      <p className="font-medium truncate" title={uploadFile.file.name}>
                         {uploadFile.file.name}
                       </p>
-                      <p className="text-sm text-slate-500">{(uploadFile.file.size / 1024).toFixed(1)} KB</p>
+                      <p className="text-sm text-muted-foreground">
+                        {(uploadFile.file.size / 1024).toFixed(1)} KB
+                      </p>
                       <div className="mt-2 space-y-1">
-                        <Progress
-                          value={uploadMutation.isSuccess ? 100 : uploadFile.progress}
-                          className="h-2 bg-slate-600"
+                        <Progress 
+                          value={uploadMutation.isSuccess ? 100 : uploadFile.progress} 
+                          className="h-2"
                         />
                         <div className="flex items-center justify-between text-xs">
-                          <span className="text-slate-500">
+                          <span className="text-muted-foreground">
                             {uploadMutation.isSuccess ? "100%" : `${uploadFile.progress}%`}
                           </span>
                           {uploadMutation.isSuccess ? (
-                            <span className="text-green-400 flex items-center gap-1">
+                            <span className="text-chart-5 flex items-center gap-1">
                               <CheckCircle2 className="h-3 w-3" />
                               Complete
                             </span>
                           ) : uploadMutation.isError ? (
-                            <span className="text-red-400 flex items-center gap-1">
+                            <span className="text-destructive flex items-center gap-1">
                               <AlertCircle className="h-3 w-3" />
                               Failed
                             </span>
                           ) : (
-                            <span className="text-blue-400 flex items-center gap-1">
+                            <span className="text-primary flex items-center gap-1">
                               <Loader2 className="h-3 w-3 animate-spin" />
                               Uploading
                             </span>
@@ -242,14 +231,13 @@ export function UploadZone({ open, onOpenChange, currentPath = "/" }: UploadZone
         )}
 
         {uploadingFiles.length > 0 && !uploadMutation.isSuccess && (
-          <div className="flex justify-end gap-2 pt-4 border-t border-slate-700">
+          <div className="flex justify-end gap-2 pt-4 border-t">
             <Button
               variant="outline"
               onClick={() => {
-                onOpenChange(false)
-                setUploadingFiles([])
+                onOpenChange(false);
+                setUploadingFiles([]);
               }}
-              className="border-slate-600 bg-slate-700 text-slate-300 hover:bg-slate-600"
               data-testid="button-cancel-upload"
             >
               Cancel
@@ -258,5 +246,5 @@ export function UploadZone({ open, onOpenChange, currentPath = "/" }: UploadZone
         )}
       </DialogContent>
     </Dialog>
-  )
+  );
 }
