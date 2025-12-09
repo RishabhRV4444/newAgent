@@ -1,5 +1,5 @@
 import { type FileItem, type CreateFolder, type StorageInfo, type ShareLink, type CreateShare } from "@shared/schema";
-import { randomUUID, randomBytes } from "crypto";
+import { randomUUID, randomBytes, createHash } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
 import os from "os";
@@ -53,24 +53,36 @@ function sanitizeParentPath(parentPath: string): string {
   return "/" + segments.join("/");
 }
 
-const getUploadsDir = (): string => {
-  const customPath = process.env.AREVEI_STORAGE_PATH;
-  if (customPath) {
-    return path.resolve(customPath);
-  }
-  
-  // Default to ~/.arevei-cloud/uploads
+function getAreveiStoragePath(): string {
   const homeDir = os.homedir();
-  return path.join(homeDir, ".arevei-cloud", "uploads");
-};
+  return path.join(homeDir, "AREVEI");
+}
 
-const UPLOADS_DIR = getUploadsDir();
-const METADATA_FILE = path.join(UPLOADS_DIR, "files.json");
-const SHARES_FILE = path.join(UPLOADS_DIR, "shares.json");
+const AREVEI_BASE_DIR = getAreveiStoragePath();
+const UPLOADS_DIR = path.join(AREVEI_BASE_DIR, "files");
+const METADATA_DIR = path.join(AREVEI_BASE_DIR, ".arevei");
+const METADATA_FILE = path.join(METADATA_DIR, "files.json");
+const SHARES_FILE = path.join(METADATA_DIR, "shares.json");
 const MAX_STORAGE_BYTES = 10 * 1024 * 1024 * 1024; // 10 GB
+
+export function getStorageBasePath(): string {
+  return AREVEI_BASE_DIR;
+}
+
+export function getUploadsDir(): string {
+  return UPLOADS_DIR;
+}
 
 function generateShareToken(): string {
   return randomBytes(32).toString('base64url');
+}
+
+export function hashPassword(password: string): string {
+  return createHash('sha256').update(password).digest('hex');
+}
+
+export function verifyPassword(password: string, hash: string): boolean {
+  return hashPassword(password) === hash;
 }
 
 function calculateExpiration(duration: CreateShare['duration']): string | null {
@@ -114,7 +126,11 @@ export class FileStorage implements IStorage {
     if (this.initialized) return;
 
     try {
+      console.log(`Initializing AREVEI storage at: ${AREVEI_BASE_DIR}`);
+      
+      await fs.mkdir(AREVEI_BASE_DIR, { recursive: true });
       await fs.mkdir(UPLOADS_DIR, { recursive: true });
+      await fs.mkdir(METADATA_DIR, { recursive: true });
       
       try {
         const data = await fs.readFile(METADATA_FILE, "utf-8");
@@ -152,6 +168,7 @@ export class FileStorage implements IStorage {
 
       await this.cleanExpiredShares();
 
+      console.log(`AREVEI storage initialized. Files directory: ${UPLOADS_DIR}`);
       this.initialized = true;
     } catch (error) {
       console.error("Failed to initialize storage:", error);
@@ -273,9 +290,6 @@ export class FileStorage implements IStorage {
 
     return updatedFile;
   }
-  getStoragePath(): string {
-    return UPLOADS_DIR;
-  }
 
   async deleteFile(id: string): Promise<void> {
     await this.initialize();
@@ -315,6 +329,7 @@ export class FileStorage implements IStorage {
       totalBytes: MAX_STORAGE_BYTES,
       fileCount,
       folderCount,
+      storagePath: AREVEI_BASE_DIR,
     };
   }
 
@@ -337,7 +352,6 @@ export class FileStorage implements IStorage {
 
   async getShareByFileId(fileId: string): Promise<ShareLink | undefined> {
     await this.initialize();
-    console.log(Array.from(this.shares.values()).find(s => s.fileId === fileId && s.isActive))
     return Array.from(this.shares.values()).find(s => s.fileId === fileId && s.isActive);
   }
 
@@ -369,6 +383,9 @@ export class FileStorage implements IStorage {
       expiresAt: calculateExpiration(data.duration),
       createdAt: now,
       isActive: true,
+      passwordHash: data.password ? hashPassword(data.password) : null,
+      maxDownloads: data.maxDownloads ?? null,
+      downloadCount: 0,
     };
 
     this.shares.set(share.id, share);
@@ -377,7 +394,7 @@ export class FileStorage implements IStorage {
     return share;
   }
 
-  async updateShare(id: string, updates: Partial<Pick<ShareLink, 'isActive' | 'expiresAt' | 'tunnelUrl'>>): Promise<ShareLink> {
+  async updateShare(id: string, updates: Partial<Pick<ShareLink, 'isActive' | 'expiresAt' | 'tunnelUrl' | 'downloadCount'>>): Promise<ShareLink> {
     await this.initialize();
 
     const share = this.shares.get(id);
@@ -394,6 +411,37 @@ export class FileStorage implements IStorage {
     await this.saveSharesMetadata();
 
     return updatedShare;
+  }
+
+  async incrementDownloadCount(id: string): Promise<ShareLink> {
+    await this.initialize();
+
+    const share = this.shares.get(id);
+    if (!share) {
+      throw new Error("Share not found");
+    }
+
+    const newCount = (share.downloadCount || 0) + 1;
+    share.downloadCount = newCount;
+
+    if (share.maxDownloads && newCount >= share.maxDownloads) {
+      share.isActive = false;
+      console.log(`Share ${share.fileName} reached max downloads (${share.maxDownloads}), deactivating`);
+    }
+
+    this.shares.set(id, share);
+    await this.saveSharesMetadata();
+
+    return share;
+  }
+
+  hasPassword(share: ShareLink): boolean {
+    return !!share.passwordHash;
+  }
+
+  checkSharePassword(share: ShareLink, password: string): boolean {
+    if (!share.passwordHash) return true;
+    return verifyPassword(password, share.passwordHash);
   }
 
   async deleteShare(id: string): Promise<void> {

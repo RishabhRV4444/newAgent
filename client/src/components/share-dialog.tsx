@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Share2, Copy, Clock, Link2, Check, Loader2 } from "lucide-react";
+import { Share2, Copy, Clock, Link2, Check, Loader2, Lock, Download, Eye, EyeOff } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -11,7 +11,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -38,9 +41,23 @@ const DURATION_OPTIONS = [
   { value: "never", label: "Never expires" },
 ];
 
+const DOWNLOAD_LIMIT_OPTIONS = [
+  { value: "0", label: "Unlimited" },
+  { value: "1", label: "1 download" },
+  { value: "5", label: "5 downloads" },
+  { value: "10", label: "10 downloads" },
+  { value: "25", label: "25 downloads" },
+  { value: "50", label: "50 downloads" },
+  { value: "100", label: "100 downloads" },
+];
+
 export function ShareDialog({ file, open, onOpenChange }: ShareDialogProps) {
   const [duration, setDuration] = useState<string>("24h");
   const [copied, setCopied] = useState(false);
+  const [usePassword, setUsePassword] = useState(false);
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [maxDownloads, setMaxDownloads] = useState<string>("0");
   const { toast } = useToast();
 
   const { data: existingShare, isLoading: checkingShare } = useQuery<{ isShared: boolean; share: ShareLink | null }>({
@@ -54,8 +71,23 @@ export function ShareDialog({ file, open, onOpenChange }: ShareDialogProps) {
   });
 
   const createShareMutation = useMutation({
-    mutationFn: async ({ fileId, duration }: { fileId: string; duration: string }) => {
-      return apiRequest("POST", "/api/shares", { fileId, duration });
+    mutationFn: async ({ 
+      fileId, 
+      duration, 
+      password, 
+      maxDownloads 
+    }: { 
+      fileId: string; 
+      duration: string;
+      password?: string;
+      maxDownloads?: number;
+    }) => {
+      return apiRequest("POST", "/api/shares", { 
+        fileId, 
+        duration,
+        ...(password && { password }),
+        ...(maxDownloads && maxDownloads > 0 && { maxDownloads }),
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/shares"] });
@@ -64,6 +96,9 @@ export function ShareDialog({ file, open, onOpenChange }: ShareDialogProps) {
         title: "Share link created",
         description: "Your file is now being shared via ngrok",
       });
+      setPassword("");
+      setUsePassword(false);
+      setMaxDownloads("0");
     },
     onError: (error: any) => {
       toast({
@@ -97,7 +132,20 @@ export function ShareDialog({ file, open, onOpenChange }: ShareDialogProps) {
 
   const handleCreateShare = () => {
     if (!file) return;
-    createShareMutation.mutate({ fileId: file.id, duration });
+    if (usePassword && !password) {
+      toast({
+        title: "Password required",
+        description: "Please enter a password or disable password protection",
+        variant: "destructive",
+      });
+      return;
+    }
+    createShareMutation.mutate({ 
+      fileId: file.id, 
+      duration,
+      password: usePassword ? password : undefined,
+      maxDownloads: parseInt(maxDownloads) || undefined,
+    });
   };
 
   const handleStopShare = () => {
@@ -127,10 +175,11 @@ export function ShareDialog({ file, open, onOpenChange }: ShareDialogProps) {
   if (!file) return null;
 
   const isShared = existingShare?.isShared && existingShare?.share?.tunnelUrl;
+  const share = existingShare?.share;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent data-testid="dialog-share">
+      <DialogContent className="sm:max-w-md" data-testid="dialog-share">
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -163,7 +212,7 @@ export function ShareDialog({ file, open, onOpenChange }: ShareDialogProps) {
                 </div>
                 <div className="flex gap-2">
                   <code className="flex-1 p-2 bg-background rounded text-xs break-all" data-testid="text-share-url">
-                    {existingShare.share?.tunnelUrl}
+                    {share?.tunnelUrl}
                   </code>
                   <Button
                     size="icon"
@@ -174,18 +223,40 @@ export function ShareDialog({ file, open, onOpenChange }: ShareDialogProps) {
                     {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                   </Button>
                 </div>
-                {existingShare.share?.expiresAt && (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Clock className="h-3 w-3" />
-                    Expires: {new Date(existingShare.share.expiresAt).toLocaleString()}
-                  </div>
-                )}
+                
+                <div className="flex flex-wrap gap-2 pt-2">
+                  {share?.expiresAt && (
+                    <Badge variant="secondary" className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      Expires: {new Date(share.expiresAt).toLocaleDateString()}
+                    </Badge>
+                  )}
+                  {share?.passwordHash && (
+                    <Badge variant="secondary" className="flex items-center gap-1">
+                      <Lock className="h-3 w-3" />
+                      Password Protected
+                    </Badge>
+                  )}
+                  {share?.maxDownloads && (
+                    <Badge variant="secondary" className="flex items-center gap-1">
+                      <Download className="h-3 w-3" />
+                      {share.downloadCount}/{share.maxDownloads} downloads
+                    </Badge>
+                  )}
+                  {!share?.maxDownloads && share?.downloadCount !== undefined && share.downloadCount > 0 && (
+                    <Badge variant="secondary" className="flex items-center gap-1">
+                      <Download className="h-3 w-3" />
+                      {share.downloadCount} downloads
+                    </Badge>
+                  )}
+                </div>
               </div>
 
-              <DialogFooter>
+              <DialogFooter className="flex-col sm:flex-row gap-2">
                 <Button
                   variant="outline"
                   onClick={() => onOpenChange(false)}
+                  className="w-full sm:w-auto"
                   data-testid="button-close"
                 >
                   Close
@@ -194,6 +265,7 @@ export function ShareDialog({ file, open, onOpenChange }: ShareDialogProps) {
                   variant="destructive"
                   onClick={handleStopShare}
                   disabled={stopShareMutation.isPending}
+                  className="w-full sm:w-auto"
                   data-testid="button-stop-share"
                 >
                   {stopShareMutation.isPending ? (
@@ -223,22 +295,92 @@ export function ShareDialog({ file, open, onOpenChange }: ShareDialogProps) {
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">
-                  The file will be accessible worldwide via ngrok during this time.
-                </p>
               </div>
 
-              <DialogFooter>
+              <div className="space-y-2">
+                <Label htmlFor="max-downloads">Download Limit</Label>
+                <Select value={maxDownloads} onValueChange={setMaxDownloads}>
+                  <SelectTrigger id="max-downloads" data-testid="select-max-downloads">
+                    <SelectValue placeholder="Select limit" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DOWNLOAD_LIMIT_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-3 p-3 rounded-lg border">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Lock className="h-4 w-4 text-muted-foreground" />
+                    <Label htmlFor="use-password" className="cursor-pointer">Password Protection</Label>
+                  </div>
+                  <Switch
+                    id="use-password"
+                    checked={usePassword}
+                    onCheckedChange={setUsePassword}
+                    data-testid="switch-password"
+                  />
+                </div>
+                
+                {usePassword && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="space-y-2"
+                  >
+                    <div className="relative">
+                      <Input
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Enter password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="pr-10"
+                        data-testid="input-password"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3"
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Recipients will need this password to access the file.
+                    </p>
+                  </motion.div>
+                )}
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                The file will be accessible worldwide via ngrok during the selected time period.
+              </p>
+
+              <DialogFooter className="flex-col sm:flex-row gap-2">
                 <Button
                   variant="outline"
                   onClick={() => onOpenChange(false)}
+                  className="w-full sm:w-auto"
                   data-testid="button-cancel"
                 >
                   Cancel
                 </Button>
                 <Button
                   onClick={handleCreateShare}
-                  disabled={createShareMutation.isPending}
+                  disabled={createShareMutation.isPending || (usePassword && !password)}
+                  className="w-full sm:w-auto"
                   data-testid="button-create-share"
                 >
                   {createShareMutation.isPending ? (

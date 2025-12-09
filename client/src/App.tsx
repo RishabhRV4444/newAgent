@@ -19,7 +19,7 @@ import Login from "@/pages/login"
 import Signup from "@/pages/signup"
 import NotFound from "@/pages/not-found"
 import { useToast } from "@/hooks/use-toast"
-import Shares from "@/pages/shares";
+import Shares from "@/pages/sharing";
 
 interface User {
   id: string
@@ -28,15 +28,15 @@ interface User {
 }
 
 function Router({ user }: { user: User | null }) {
-  if (!user) {
-    return (
-      <Switch>
-        <Route path="/login" component={Login} />
-        <Route path="/signup" component={Signup} />
-        <Route component={Login} />
-      </Switch>
-    )
-  }
+  // if (!user) {
+  //   return (
+  //     <Switch>
+  //       <Route path="/login" component={Login} />
+  //       <Route path="/signup" component={Signup} />
+  //       <Route component={Login} />
+  //     </Switch>
+  //   )
+  // }
 
   return (
     <Switch>
@@ -52,26 +52,26 @@ function Router({ user }: { user: User | null }) {
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const { toast } = useToast()
 
-  useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const res = await fetch("/api/auth/me")
-        if (res.ok) {
-          const data = await res.json()
-          setUser(data.user)
-        }
-      } catch (error) {
-        console.error("Failed to fetch user:", error)
-      } finally {
-        setLoading(false)
-      }
-    }
+  // useEffect(() => {
+  //   const fetchUser = async () => {
+  //     try {
+  //       const res = await fetch("/api/auth/me")
+  //       if (res.ok) {
+  //         const data = await res.json()
+  //         setUser(data.user)
+  //       }
+  //     } catch (error) {
+  //       console.error("Failed to fetch user:", error)
+  //     } finally {
+  //       setLoading(false)
+  //     }
+  //   }
 
-    fetchUser()
-  }, [])
+  //   fetchUser()
+  // }, [])
 
   if (loading) {
     return (
@@ -86,27 +86,27 @@ export default function App() {
     "--sidebar-width-icon": "3rem",
   }
 
-  if (!user) {
-    return (
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <Router user={null} />
-          <Toaster />
-        </TooltipProvider>
-      </QueryClientProvider>
-    )
-  }
+  // if (!user) {
+  //   return (
+  //     <QueryClientProvider client={queryClient}>
+  //       <TooltipProvider>
+  //         <Router user={null} />
+  //         <Toaster />
+  //       </TooltipProvider>
+  //     </QueryClientProvider>
+  //   )
+  // }
 
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <SidebarProvider style={style as React.CSSProperties}>
           <div className="flex h-screen w-full">
-            <AppSidebar user={user} />
+            <AppSidebar  />
             <div className="flex flex-col flex-1">
-              <header className="flex items-center justify-between h-16 px-6 border-b gap-4 bg-slate-800 border-slate-700">
+              <header className="flex items-center justify-between h-16 px-6 border-b gap-4  border-slate-700">
                 <SidebarTrigger data-testid="button-sidebar-toggle" />
-                <div className="text-sm text-slate-300 flex-1 text-center">Welcome, {user.username}</div>
+                {/* <div className="text-sm text-slate-300 flex-1 text-center">Welcome, {user.username}</div> */}
                 <ThemeToggle />
               </header>
               <main className="flex-1 overflow-auto">

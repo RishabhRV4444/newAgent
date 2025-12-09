@@ -64,7 +64,7 @@ export default function Files() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-gradient-to-b from-slate-900 to-slate-800">
+    <div className="flex flex-col h-full ">
       <div className="p-6 border-b border-slate-700 space-y-4">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">

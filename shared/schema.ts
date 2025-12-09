@@ -34,6 +34,7 @@ export const storageInfoSchema = z.object({
   totalBytes: z.number(),
   fileCount: z.number(),
   folderCount: z.number(),
+   storagePath: z.string().optional(),
 });
 
 export type FileItem = z.infer<typeof fileItemSchema>;
@@ -52,11 +53,16 @@ export const shareLinkSchema = z.object({
   expiresAt: z.string().nullable(),
   createdAt: z.string(),
   isActive: z.boolean(),
+  passwordHash: z.string().nullable().optional(),
+  maxDownloads: z.number().nullable().optional(),
+  downloadCount: z.number().default(0),
 });
 
 export const createShareSchema = z.object({
   fileId: z.string(),
   duration: z.enum(['1h', '6h', '24h', '7d', '30d', 'never']),
+  password: z.string().optional(),
+  maxDownloads: z.number().min(1).max(1000).optional(),
 });
 
 export const insertShareLinkSchema = shareLinkSchema.omit({
@@ -64,6 +70,11 @@ export const insertShareLinkSchema = shareLinkSchema.omit({
   createdAt: true,
 });
 
+export const verifySharePasswordSchema = z.object({
+  token: z.string(),
+  password: z.string(),
+});
 export type ShareLink = z.infer<typeof shareLinkSchema>;
 export type InsertShareLink = z.infer<typeof insertShareLinkSchema>;
 export type CreateShare = z.infer<typeof createShareSchema>;
+export type VerifySharePassword = z.infer<typeof verifySharePasswordSchema>;
