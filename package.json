@@ -4,7 +4,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+    "build": "vite build && esbuild server/index.ts --platform=node --packages=external --external:vite --external:drizzle-kit --bundle --format=esm --outdir=dist",
     "check": "tsc",
     "db:push": "drizzle-kit push",
     "dev": "cross-env NODE_ENV=development tsx server/index.ts",

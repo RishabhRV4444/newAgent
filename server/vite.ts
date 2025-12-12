@@ -1,46 +1,16 @@
 import express, { type Express } from "express";
 import fs from "fs";
 import path from "path";
+import { createServer as createViteServer, createLogger } from "vite";
 import { type Server } from "http";
+import viteConfig from "../vite.config";
 import { nanoid } from "nanoid";
 
-export function log(message: string, source = "express") {
-  const formattedTime = new Date().toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  });
+const viteLogger = createLogger();
 
-  console.log(`${formattedTime} [${source}] ${message}`);
-}
+
 
 export async function setupVite(app: Express, server: Server) {
-  // Dynamically import vite only in development so it doesn't get bundled in production.
-  const { createServer: createViteServer, createLogger } = await import("vite");
-  const viteLogger = createLogger();
-  
-  // Import the project's vite.config dynamically. It's only loaded in development
-  // (setupVite is only called when NODE_ENV=development) so it won't be bundled
-  // in production by esbuild (which uses --packages=external).
-  let viteConfig: any = {};
-  try {
-    const configModule = await import("../vite.config");
-    viteConfig = configModule.default;
-  } catch (e) {
-    console.warn("Failed to import vite.config, using minimal config", e);
-    viteConfig = {
-      root: path.resolve(import.meta.dirname, "..", "client"),
-      resolve: {
-        alias: {
-          "@": path.resolve(import.meta.dirname, "..", "client", "src"),
-          "@shared": path.resolve(import.meta.dirname, "..", "shared"),
-          "@assets": path.resolve(import.meta.dirname, "..", "attached_assets"),
-        },
-      },
-    };
-  }
-
   const serverOptions = {
     middlewareMode: true,
     hmr: { server },

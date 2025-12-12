@@ -19,6 +19,11 @@ import {
 } from "@/components/ui/sidebar";
 
 const menuItems = [
+  // {
+  //   title: "Electron",
+  //   url: "/electron",
+  //   icon: LayoutDashboard,
+  // },
   {
     title: "Dashboard",
     url: "/",

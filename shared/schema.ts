@@ -78,3 +78,34 @@ export type ShareLink = z.infer<typeof shareLinkSchema>;
 export type InsertShareLink = z.infer<typeof insertShareLinkSchema>;
 export type CreateShare = z.infer<typeof createShareSchema>;
 export type VerifySharePassword = z.infer<typeof verifySharePasswordSchema>;
+
+// Cloud Agent Status schemas
+export const cloudAgentStatusSchema = z.object({
+  cloudStatus: z.enum(['running', 'stopped', 'error', 'checking']),
+  containerName: z.string(),
+  dockerInstalled: z.boolean(),
+  dockerVersion: z.string().optional(),
+  dockerRunning: z.boolean(),
+  connectionStatus: z.enum(['connected', 'disconnected', 'dev_mode']),
+  connectionUser: z.string().optional(),
+  agentOnline: z.boolean(),
+  localUrl: z.string(),
+  networkUrl: z.string().optional(),
+});
+
+export const cloudControlResultSchema = z.object({
+  success: z.boolean(),
+  message: z.string().optional(),
+  error: z.string().optional(),
+});
+
+export const agentLogSchema = z.object({
+  id: z.string(),
+  timestamp: z.string(),
+  message: z.string(),
+  type: z.enum(['info', 'success', 'error', 'warning']),
+});
+
+export type CloudAgentStatus = z.infer<typeof cloudAgentStatusSchema>;
+export type CloudControlResult = z.infer<typeof cloudControlResultSchema>;
+export type AgentLog = z.infer<typeof agentLogSchema>;

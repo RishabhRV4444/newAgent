@@ -11,17 +11,18 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=5000
-      - AREVEI_STORAGE_PATH=/home/appuser/.arevei-cloud/uploads
+      - DATABASE_URL=postgresql://neondb_owner:npg_zBZoVi9S5Xeg@ep-misty-cherry-ad9je1om-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require
+      - NGROK_AUTHTOKEN=36EERH8cOu8UTiaKW8BgfstLypL_3AD7EeBxoQKTSrDrWWTda
+
+      # Users can override this with -e flag in docker run or in .env file
+      - AREVEI_STORAGE_PATH=/data/arevei-cloud/uploads
+
     volumes:
-      - /c/Users/Wave/.arevei-cloud/uploads:/home/appuser/.arevei-cloud/uploads
-      # Alternative: mount a custom directory (uncomment and modify path)
-      # - /path/to/your/storage:/home/appuser/.arevei-cloud/uploads
+      # Users can modify this path or use docker run -v for custom directories
+      - ${AREVEI_HOST_STORAGE_PATH:-~/.arevei-cloud/uploads}:/data/arevei-cloud/uploads
     restart: unless-stopped
     networks:
       - arevei-network
-    # Uncomment to use environment file
-    # env_file:
-    #   - .env.production
 
 networks:
   arevei-network:

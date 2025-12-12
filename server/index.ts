@@ -9,10 +9,19 @@ import memorystore from "memorystore";
 // DATABASE_URL. This MemoryStore is fine for local development.
 const MemoryStore = memorystore(session as any);
 import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
-
+import { serveStatic } from "./static";
 const app = express();
 
+export function log(message: string, source = "express") {
+  const formattedTime = new Date().toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+
+  console.log(`${formattedTime} [${source}] ${message}`);
+}
 declare module 'http' {
   interface IncomingMessage {
     rawBody: unknown
@@ -84,6 +93,7 @@ app.use((req, res, next) => {
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
   if (process.env.NODE_ENV === "development") {
+    const { setupVite } = await import("./vite");
     await setupVite(app, server);
   } else {
     serveStatic(app);

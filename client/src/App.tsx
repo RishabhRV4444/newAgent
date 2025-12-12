@@ -20,6 +20,7 @@ import Signup from "@/pages/signup"
 import NotFound from "@/pages/not-found"
 import { useToast } from "@/hooks/use-toast"
 import Shares from "@/pages/sharing";
+import ElectronDashboard from "./pages/electron"
 
 interface User {
   id: string
@@ -45,6 +46,7 @@ function Router({ user }: { user: User | null }) {
       <Route path="/shares" component={Shares} />
       <Route path="/storage" component={Storage} />
       <Route path="/settings" component={Settings} />
+      <Route path="/electron" component={ElectronDashboard} />
       <Route component={NotFound} />
     </Switch>
   )

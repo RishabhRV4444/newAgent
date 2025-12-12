@@ -19,7 +19,7 @@ services:
 
     volumes:
       # Users can modify this path or use docker run -v for custom directories
-      - ${AREVEI_HOST_STORAGE_PATH:-~/.arevei-cloud/uploads}:/data/arevei-cloud/uploads
+      - ${AREVEI_HOST_STORAGE_PATH:-/c/Users/Wave/.arevei-cloud/uploads}:/data/arevei-cloud/uploads
     restart: unless-stopped
     networks:
       - arevei-network
