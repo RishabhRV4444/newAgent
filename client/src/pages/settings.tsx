@@ -94,7 +94,7 @@ function SyncSettings({ storagePath }: { storagePath?: string }) {
           </p>
         </div>
 
-        <div className="space-y-2">
+        {/* <div className="space-y-2">
           <Label className="flex items-center gap-2">
             <Network className="h-4 w-4" />
             Tunnel Provider
@@ -111,11 +111,11 @@ function SyncSettings({ storagePath }: { storagePath?: string }) {
           <p className="text-xs text-muted-foreground">
             Choose how you want to access your cloud from outside your network
           </p>
-        </div>
+        </div> */}
 
-        <Button onClick={handleSaveSettings} className="w-full" data-testid="button-save-sync">
+        {/* <Button onClick={handleSaveSettings} className="w-full" data-testid="button-save-sync">
           Save Settings
-        </Button>
+        </Button> */}
       </CardContent>
     </Card>
   );
@@ -332,7 +332,7 @@ export default function Settings() {
         <p className="text-muted-foreground">Manage your AREVEI Cloud preferences</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1  gap-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -341,13 +341,13 @@ export default function Settings() {
           <SyncSettings storagePath={storageInfo?.storagePath} />
         </motion.div>
 
-        <motion.div
+        {/* <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1, duration: 0.3 }}
         >
           <DomainSettings />
-        </motion.div>
+        </motion.div> */}
       </div>
 
       <motion.div
@@ -378,16 +378,16 @@ export default function Settings() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">License</p>
-                <p className="font-medium">MIT</p>
+                <p className="font-medium text-green-400">FREE</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Platform</p>
                 <p className="font-medium">Desktop App</p>
               </div>
-              <div>
+              {/* <div>
                 <p className="text-sm text-muted-foreground">Tunnel</p>
                 <p className="font-medium">ngrok</p>
-              </div>
+              </div> */}
             </div>
             <p className="text-sm text-muted-foreground">
               AREVEI is a secure, local-first file management system that allows you to store files on your own computer
