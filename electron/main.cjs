@@ -4,38 +4,52 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const os = require('os');
 const http = require('http');
+const { spawn } = require('child_process');
 
 let mainWindow;
 let shareServer;
+let serverProcess;
 const sharedFiles = new Map();
 
 const isDev = process.env.NODE_ENV !== 'production' || !app.isPackaged;
 
+
 function createWindow() {
+  // Find icon path - check multiple possible locations
+  let iconPath = path.join(__dirname, '../client/public/favicon.png');
+  if (!fsSync.existsSync(iconPath)) {
+    // Try alternative paths in production
+    iconPath = path.join(__dirname, '../resources/client/public/favicon.png');
+    if (!fsSync.existsSync(iconPath)) {
+      iconPath = undefined; // Use default icon
+    }
+  }
+  
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 800,
     minHeight: 600,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      // Use the bundled preload script
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
     },
     titleBarStyle: 'default',
     show: false,
+    ...(iconPath && { icon: iconPath }),
   });
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5000');
     mainWindow.webContents.openDevTools();
+    mainWindow.once('ready-to-show', () => {
+      mainWindow.show();
+    });
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    mainWindow.loadFile(path.join(app.getAppPath(), '/dist/public/index.html'));
   }
-
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
-  });
 }
 
 async function getDirectoryContents(dirPath) {
@@ -254,7 +268,16 @@ app.on('window-all-closed', () => {
   if (shareServer) {
     shareServer.close();
   }
+  if (serverProcess) {
+    serverProcess.kill();
+  }
   if (process.platform !== 'darwin') {
     app.quit();
+  }
+});
+
+app.on('before-quit', () => {
+  if (serverProcess) {
+    serverProcess.kill();
   }
 });

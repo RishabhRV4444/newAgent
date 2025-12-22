@@ -1,11 +1,9 @@
-// Minimal preload — expose no Node API to renderer for security
-// Add IPC handlers here if you need native functionality.
-const { contextBridge } = require('electron');
+// Preload script: exposes a minimal, safe API to the renderer
+const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electron', {
   platform: process.platform,
 });
-const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   getSystemDirs: () => ipcRenderer.invoke('get-system-dirs'),

@@ -56,6 +56,7 @@ export const shareLinkSchema = z.object({
   passwordHash: z.string().nullable().optional(),
   maxDownloads: z.number().nullable().optional(),
   downloadCount: z.number().default(0),
+  accessType: z.enum(['view', 'download']).default('download'),
 });
 
 export const createShareSchema = z.object({
@@ -63,6 +64,7 @@ export const createShareSchema = z.object({
   duration: z.enum(['1h', '6h', '24h', '7d', '30d', 'never']),
   password: z.string().optional(),
   maxDownloads: z.number().min(1).max(1000).optional(),
+  accessType: z.enum(['view', 'download']).default('download'),
 });
 
 export const insertShareLinkSchema = shareLinkSchema.omit({
