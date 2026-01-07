@@ -7,18 +7,20 @@ const http = require('http');
 
 let mainWindow;
 let shareServer;
+let serverProcess = null;
 const sharedFiles = new Map();
 
 const isDev = process.env.NODE_ENV !== 'production' || !app.isPackaged;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
+    autoHideMenuBar: true,
     width: 1200,
     height: 800,
     minWidth: 800,
     minHeight: 600,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -30,7 +32,8 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:5000');
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    mainWindow.loadFile(path.join(app.getAppPath(), '/dist/public/index.html'));
+    startServer();
   }
 
   mainWindow.once('ready-to-show', () => {
@@ -82,6 +85,39 @@ function getSystemDirectories() {
     music: path.join(homeDir, 'Music'),
     videos: path.join(homeDir, 'Videos'),
   };
+}
+
+function startServer() {
+  if (serverProcess) return;
+
+  const { spawn } = require('child_process');
+  const appPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'app')
+    : path.join(__dirname, '..');
+  const serverPath = path.join(appPath, 'dist', 'index.cjs');
+
+  serverProcess = spawn('node', [serverPath], {
+    cwd: appPath,
+    env: {
+      ...process.env,
+      NODE_ENV: 'production',
+      PORT: '5000',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  serverProcess.stdout.on('data', (data) => {
+    console.log(`Server: ${data.toString()}`);
+  });
+
+  serverProcess.stderr.on('data', (data) => {
+    console.error(`Server error: ${data.toString()}`);
+  });
+
+  serverProcess.on('exit', (code) => {
+    console.log(`Server process exited with code ${code}`);
+    serverProcess = null;
+  });
 }
 
 function startShareServer() {
@@ -254,7 +290,21 @@ app.on('window-all-closed', () => {
   if (shareServer) {
     shareServer.close();
   }
+  if (serverProcess) {
+    serverProcess.kill();
+    serverProcess = null;
+  }
   if (process.platform !== 'darwin') {
     app.quit();
+  }
+});
+
+app.on('before-quit', () => {
+  if (serverProcess) {
+    serverProcess.kill();
+    serverProcess = null;
+  }
+  if (shareServer) {
+    shareServer.close();
   }
 });

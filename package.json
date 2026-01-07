@@ -1,5 +1,5 @@
 {
-  "name": "rest-express",
+  "name": "arevei-cloud",
   "version": "1.0.0",
   "description": "AREVEI Cloud - local file management dashboard",
   "author": "",
@@ -7,29 +7,69 @@
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
-    "build": "vite build && esbuild server/index.ts --platform=node --packages=external --external:vite --external:drizzle-kit --bundle --format=cjs --outdir=dist",
+    "build": "vite build && esbuild server/index.ts --platform=node --packages=external --external:vite --external:drizzle-kit --bundle --format=cjs --outdir=dist --out-extension:.js=.cjs",
     "check": "tsc",
     "db:push": "drizzle-kit push",
-    "start": "cross-env NODE_ENV=production node dist/index.js",
+    "start": "cross-env NODE_ENV=production node dist/index.cjs",
     "dev:server": "cross-env NODE_ENV=development tsx server/index.ts",
     "dev:electron": "wait-on http://localhost:5000 && electron .",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:electron\"",
-    "electron:build": "npm run build && electron-builder --win --x64"
+    "electron:build": "npm run build && electron-builder --win --x64",
+    "electron:build:zip": "npm run build && electron-builder --win --x64 --config.win.target=zip"
   },
   "build": {
     "appId": "com.arevei.cloud",
     "productName": "AREVEI Cloud",
     "files": [
       "dist/**",
-      "node_modules/**",
       "electron/**",
-      "package.json"
+      "package.json",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/*.d.ts",
+      "!**/node_modules/.bin",
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!.editorconfig",
+      "!**/._*",
+      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+      "!**/{appveyor.yml,.travis.yml,circle.yml}",
+      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+    ],
+    "extraFiles": [
+      {
+        "from": "dist",
+        "to": "dist",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "directories": {
-      "buildResources": "build"
+      "buildResources": "build",
+      "output": "release"
     },
     "win": {
-      "target": ["nsis"]
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
     }
   },
   "dependencies": {
@@ -37,7 +77,6 @@
     "@hookform/resolvers": "^3.10.0",
     "@jridgewell/trace-mapping": "^0.3.25",
     "@neondatabase/serverless": "^0.10.4",
-    "@ngrok/ngrok": "^1.6.0",
     "@radix-ui/react-accordion": "latest",
     "@radix-ui/react-alert-dialog": "latest",
     "@radix-ui/react-aspect-ratio": "latest",
@@ -93,6 +132,7 @@
     "nanoid": "latest",
     "next": "16.0.3",
     "next-themes": "^0.4.6",
+    "ngrok": "^5.0.0-beta.2",
     "os": "latest",
     "passport": "^0.7.0",
     "passport-local": "^1.0.0",
@@ -141,14 +181,14 @@
     "autoprefixer": "^10.4.20",
     "cross-env": "^10.1.0",
     "drizzle-kit": "^0.31.4",
+    "electron": "^39.2.6",
+    "electron-builder": "^24.7.0",
     "esbuild": "^0.25.0",
     "postcss": "^8.5",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.20.5",
     "typescript": "^5",
-    "vite": "^5.4.21",
-    "electron-builder": "^24.7.0",
-    "electron": "^39.2.6"
+    "vite": "^5.4.21"
   },
   "optionalDependencies": {
     "bufferutil": "^4.0.8"

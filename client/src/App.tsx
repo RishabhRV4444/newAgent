@@ -11,6 +11,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/app-sidebar"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { SharedFilesBar } from "@/components/shared-files-bar";
 import Dashboard from "@/pages/dashboard"
 import Files from "@/pages/files"
 import Storage from "@/pages/storage"
@@ -111,6 +112,7 @@ export default function App() {
                 {/* <div className="text-sm text-slate-300 flex-1 text-center">Welcome, {user.username}</div> */}
                 <ThemeToggle />
               </header>
+              <SharedFilesBar />
               <main className="flex-1 overflow-auto">
                 <Router user={user} />
               </main>

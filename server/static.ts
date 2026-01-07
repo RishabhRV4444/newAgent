@@ -14,11 +14,14 @@ export function log(message: string, source = "express") {
 }
 
 export function serveStatic(app: Express) {
-  const distPath = path.resolve(import.meta.dirname, "public");
+  // In production, the server is run from the project root (or app root in Electron)
+  // and the client is built to dist/public. Using process.cwd() keeps this simple
+  // and avoids issues with import.meta when bundling.
+  const distPath = path.resolve(process.cwd(), "dist", "public");
 
   if (!fs.existsSync(distPath)) {
     throw new Error(
-      `Could not find the build directory: ${distPath}, make sure to build the client first`,
+      `Could not find the build directory at: ${distPath}. Make sure to run "npm run build" first.`,
     );
   }
 

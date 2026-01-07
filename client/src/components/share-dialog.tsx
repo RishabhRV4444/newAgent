@@ -58,13 +58,14 @@ export function ShareDialog({ file, open, onOpenChange }: ShareDialogProps) {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [maxDownloads, setMaxDownloads] = useState<string>("0");
+  const [accessType, setAccessType] = useState<"view" | "download">("download");
   const { toast } = useToast();
 
   const { data: existingShare, isLoading: checkingShare } = useQuery<{ isShared: boolean; share: ShareLink | null }>({
-    queryKey: ["/api/checkshare", file?.id],
+    queryKey: ["/api/shares", file?.id, "check"],
     queryFn: async () => {
       if (!file) return { isShared: false, share: null };
-      const res = await fetch(`/api/checkshare/${file.id}`);
+      const res = await fetch(`/api/shares/${file.id}/check`);
       return res.json();
     },
     enabled: !!file && open,
@@ -75,23 +76,26 @@ export function ShareDialog({ file, open, onOpenChange }: ShareDialogProps) {
       fileId, 
       duration, 
       password, 
-      maxDownloads 
+      maxDownloads,
+      accessType
     }: { 
       fileId: string; 
       duration: string;
       password?: string;
       maxDownloads?: number;
+      accessType: "view" | "download";
     }) => {
       return apiRequest("POST", "/api/shares", { 
         fileId, 
         duration,
+        accessType,
         ...(password && { password }),
         ...(maxDownloads && maxDownloads > 0 && { maxDownloads }),
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/shares"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/checkshare", file?.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/shares", file?.id, "check"] });
       toast({
         title: "Share link created",
         description: "Your file is now being shared via ngrok",
@@ -115,7 +119,7 @@ export function ShareDialog({ file, open, onOpenChange }: ShareDialogProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/shares"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/checkshare", file?.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/shares", file?.id, "check"] });
       toast({
         title: "Sharing stopped",
         description: "The share link has been disabled",
@@ -143,8 +147,9 @@ export function ShareDialog({ file, open, onOpenChange }: ShareDialogProps) {
     createShareMutation.mutate({ 
       fileId: file.id, 
       duration,
+      accessType: "download", // Forced to download
       password: usePassword ? password : undefined,
-      maxDownloads: parseInt(maxDownloads) || undefined,
+      maxDownloads: undefined, // Removed download limit
     });
   };
 
@@ -225,6 +230,10 @@ export function ShareDialog({ file, open, onOpenChange }: ShareDialogProps) {
                 </div>
                 
                 <div className="flex flex-wrap gap-2 pt-2">
+                  <Badge variant="secondary" className="flex items-center gap-1">
+                    <Eye className="h-3 w-3" />
+                    {share?.accessType === 'view' ? 'View Only' : 'View & Download'}
+                  </Badge>
                   {share?.expiresAt && (
                     <Badge variant="secondary" className="flex items-center gap-1">
                       <Clock className="h-3 w-3" />
@@ -297,27 +306,16 @@ export function ShareDialog({ file, open, onOpenChange }: ShareDialogProps) {
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="max-downloads">Download Limit</Label>
-                <Select value={maxDownloads} onValueChange={setMaxDownloads}>
-                  <SelectTrigger id="max-downloads" data-testid="select-max-downloads">
-                    <SelectValue placeholder="Select limit" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DOWNLOAD_LIMIT_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-3 p-3 rounded-lg border">
+              <div className="space-y-3 p-4 rounded-xl border-2 border-primary/10 bg-primary/5">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Lock className="h-4 w-4 text-muted-foreground" />
-                    <Label htmlFor="use-password" className="cursor-pointer">Password Protection</Label>
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-primary/20 rounded-lg">
+                      <Lock className="h-4 w-4 text-primary" />
+                    </div>
+                    <div>
+                      <Label htmlFor="use-password" title="Enable to require a password for access" className="cursor-pointer font-semibold">Password Protection</Label>
+                      <p className="text-[10px] text-muted-foreground">Require a key to access this file</p>
+                    </div>
                   </div>
                   <Switch
                     id="use-password"
@@ -329,37 +327,34 @@ export function ShareDialog({ file, open, onOpenChange }: ShareDialogProps) {
                 
                 {usePassword && (
                   <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="space-y-2"
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="space-y-3 pt-2"
                   >
                     <div className="relative">
                       <Input
                         type={showPassword ? "text" : "password"}
-                        placeholder="Enter password"
+                        placeholder="Enter secure password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="pr-10"
+                        className="pr-10 border-primary/20 focus-visible:ring-primary h-11"
                         data-testid="input-password"
                       />
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="absolute right-0 top-0 h-full px-3"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
                         onClick={() => setShowPassword(!showPassword)}
                       >
                         {showPassword ? (
-                          <EyeOff className="h-4 w-4" />
+                          <EyeOff className="h-4 w-4 text-primary" />
                         ) : (
-                          <Eye className="h-4 w-4" />
+                          <Eye className="h-4 w-4 text-primary" />
                         )}
                       </Button>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      Recipients will need this password to access the file.
-                    </p>
                   </motion.div>
                 )}
               </div>

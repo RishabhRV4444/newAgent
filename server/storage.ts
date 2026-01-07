@@ -55,7 +55,7 @@ function sanitizeParentPath(parentPath: string): string {
 
 function getAreveiStoragePath(): string {
   const homeDir = os.homedir();
-  return path.join(homeDir, process.env.AREVEI_STORAGE_PATH || "AREVEI");
+  return path.join(homeDir, "AREVEI");
 }
 
 const AREVEI_BASE_DIR = getAreveiStoragePath();
@@ -386,6 +386,7 @@ export class FileStorage implements IStorage {
       passwordHash: data.password ? hashPassword(data.password) : null,
       maxDownloads: data.maxDownloads ?? null,
       downloadCount: 0,
+      accessType: data.accessType ?? 'download',
     };
 
     this.shares.set(share.id, share);

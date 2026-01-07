@@ -60,6 +60,23 @@ export function FileList({ files, onFolderClick }: FileListProps) {
     return <File className="h-5 w-5 text-muted-foreground" />;
   };
 
+  const getThumbnail = (file: FileItem) => {
+    if (file.type === "file" && file.mimeType?.startsWith("image/")) {
+      const fileUrl = `/api/files/${file.id}/content`;
+      return (
+        <div className="h-9 w-9 rounded-lg overflow-hidden border-2 border-primary/10 shadow-sm bg-muted flex-shrink-0">
+          <img 
+            src={fileUrl} 
+            alt={file.name}
+            className="h-full w-full object-cover"
+            title={file.name}
+          />
+        </div>
+      );
+    }
+    return null;
+  };
+
   const formatSize = (bytes: number) => {
     if (bytes === 0) return "-";
     const units = ["B", "KB", "MB", "GB"];
@@ -126,7 +143,9 @@ export function FileList({ files, onFolderClick }: FileListProps) {
               data-testid={`row-file-${file.id}`}
             >
               <div className="col-span-5 flex items-center gap-3 min-w-0">
-                {getIcon(file)}
+                <div className="flex items-center gap-2">
+                  {getThumbnail(file) || getIcon(file)}
+                </div>
                 <span 
                   className="truncate font-medium" 
                   title={file.name}

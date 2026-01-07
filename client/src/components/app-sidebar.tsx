@@ -17,6 +17,7 @@ import {
   SidebarMenuItem,
   SidebarHeader,
 } from "@/components/ui/sidebar";
+import Image from "next/image";
 
 const menuItems = [
   // {
@@ -56,9 +57,27 @@ export function AppSidebar() {
 
   return (
     <Sidebar>
-      <SidebarHeader className="p-6">
-        <h1 className="text-2xl font-bold text-primary">AREVEI Cloud</h1>
-      </SidebarHeader>
+      <SidebarHeader className="p-6 flex justify-center max-w-[13rem] mx-auto">
+  {/* Light mode logo */}
+  <img
+    src="/ARVCloud-color-white.png"
+    alt="Arevei Cloud"
+    width={200}
+    height={80}
+    className="block dark:hidden"
+
+  />
+
+  {/* Dark mode logo */}
+  <img
+    src="/ARVCloud-color-black.png"
+    alt="Arevei Cloud"
+    width={200}
+    height={80}
+    className="hidden dark:block"
+  
+  />
+</SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel>Navigation</SidebarGroupLabel>

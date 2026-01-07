@@ -1,49 +1,40 @@
-import ngrok from '@ngrok/ngrok';
 import { storage } from './storage';
 import type { ShareLink } from '@shared/schema';
 
 interface ActiveTunnel {
   shareId: string;
-  listener: ngrok.Listener;
+  url: string;
   timeoutId?: NodeJS.Timeout;
 }
 
 class NgrokService {
   private tunnels: Map<string, ActiveTunnel> = new Map();
-  private isConnected = false;
   private localPort: number = 5000;
 
   async initialize(port: number): Promise<void> {
     this.localPort = port;
-    
     const authToken = process.env.NGROK_AUTHTOKEN;
     if (!authToken) {
       console.warn('NGROK_AUTHTOKEN not set - file sharing via ngrok will not work');
       return;
     }
-
-    try {
-      await this.recoverActiveTunnels();
-      this.isConnected = true;
-      console.log('Ngrok service initialized');
-    } catch (error) {
-      console.error('Failed to initialize ngrok service:', error);
-    }
-  }
-
-  private async recoverActiveTunnels(): Promise<void> {
-    const shares = await storage.getAllShares();
-    for (const share of shares) {
-      if (share.isActive && share.tunnelUrl) {
-        await storage.updateShare(share.id, { tunnelUrl: null });
-      }
-    }
+    console.log('Ngrok service initialized (using legacy ngrok library)');
   }
 
   async startTunnel(shareId: string): Promise<string> {
     const authToken = process.env.NGROK_AUTHTOKEN;
     if (!authToken) {
       throw new Error('NGROK_AUTHTOKEN is required for file sharing');
+    }
+
+    let ngrok: any;
+    try {
+      // Switch to the legacy 'ngrok' package which is often more stable on older Windows environments
+      const m = await import('ngrok');
+      ngrok = m.default || m;
+    } catch (error) {
+      console.error('Failed to load ngrok module:', error);
+      throw new Error('ngrok module not available. Please ensure the "ngrok" package is installed.');
     }
 
     const shares = await storage.getAllShares();
@@ -53,27 +44,26 @@ class NgrokService {
     }
 
     if (this.tunnels.has(shareId)) {
-      const existing = this.tunnels.get(shareId)!;
-      return existing.listener.url() || '';
+      return this.tunnels.get(shareId)!.url;
     }
 
     try {
-      const listener = await ngrok.forward({
-        addr: `http://localhost:${this.localPort}`,
+      // The 'ngrok' package uses a different API than '@ngrok/ngrok'
+      const url = await ngrok.connect({
+        proto: 'http',
+        addr: this.localPort,
         authtoken: authToken,
-        domain: undefined,
       });
 
-      const tunnelUrl = listener.url();
-      if (!tunnelUrl) {
+      if (!url) {
         throw new Error('Failed to get tunnel URL');
       }
 
-      const shareUrl = `${tunnelUrl}/share/${share.shareToken}`;
+      const shareUrl = `${url}/share/${share.shareToken}`;
 
       const activeTunnel: ActiveTunnel = {
         shareId,
-        listener,
+        url: shareUrl,
       };
 
       if (share.expiresAt) {
@@ -86,7 +76,6 @@ class NgrokService {
       }
 
       this.tunnels.set(shareId, activeTunnel);
-
       await storage.updateShare(shareId, { tunnelUrl: shareUrl });
 
       console.log(`Started ngrok tunnel for share ${shareId}: ${shareUrl}`);
@@ -105,7 +94,8 @@ class NgrokService {
       }
 
       try {
-        await tunnel.listener.close();
+        const ngrok = await import('ngrok');
+        await (ngrok.default || ngrok).disconnect(tunnel.url.split('/share/')[0]);
       } catch (error) {
         console.error('Error closing tunnel:', error);
       }
@@ -122,16 +112,18 @@ class NgrokService {
   }
 
   async stopAllTunnels(): Promise<void> {
-    const shareIds = Array.from(this.tunnels.keys());
-    for (const shareId of shareIds) {
-      await this.stopTunnel(shareId);
+    try {
+      const ngrok = await import('ngrok');
+      await (ngrok.default || ngrok).kill();
+      this.tunnels.clear();
+    } catch (error) {
+      console.error('Error killing ngrok:', error);
     }
   }
 
   getTunnelUrl(shareId: string): string | null {
     const tunnel = this.tunnels.get(shareId);
-    if (!tunnel) return null;
-    return tunnel.listener.url() || null;
+    return tunnel ? tunnel.url : null;
   }
 
   isShareActive(shareId: string): boolean {

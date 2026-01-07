@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
   FileText,
@@ -11,6 +12,9 @@ import {
   Pencil,
   Trash2,
   Eye,
+  Share2,
+  FolderOpen,
+  Link2,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,7 +24,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { FileItem } from "@/shared/schema";
+import { Badge } from "@/components/ui/badge";
+import type { FileItem, ShareLink } from "@shared/schema";
 import { formatDistanceToNow } from "date-fns";
 
 interface FileCardProps {
@@ -28,14 +33,29 @@ interface FileCardProps {
   onRename: (file: FileItem) => void;
   onDelete: (file: FileItem) => void;
   onPreview: (file: FileItem) => void;
+  onShare: (file: FileItem) => void;
+  onClick?: (file: FileItem) => void;
 }
 
-export function FileCard({ file, onRename, onDelete, onPreview }: FileCardProps) {
+export function FileCard({ file, onRename, onDelete, onPreview, onShare, onClick }: FileCardProps) {
   const [isHovered, setIsHovered] = useState(false);
+  
+  const { data: shareData } = useQuery<{ isShared: boolean; share: ShareLink | null }>({
+    queryKey: ["/api/shares", file.id, "check"],
+    queryFn: async () => {
+      if (file.type !== "file") return { isShared: false, share: null };
+      const res = await fetch(`/api/shares/${file.id}/check`);
+      return res.json();
+    },
+  });
 
   const getIcon = () => {
     if (file.type === "folder") {
-      return <Folder className="h-12 w-12 text-primary" />;
+      return isHovered ? (
+        <FolderOpen className="h-12 w-12 text-primary" />
+      ) : (
+        <Folder className="h-12 w-12 text-primary" />
+      );
     }
 
     const mime = file.mimeType || "";
@@ -64,6 +84,19 @@ export function FileCard({ file, onRename, onDelete, onPreview }: FileCardProps)
   const canPreview = file.type === "file" && 
     (file.mimeType?.startsWith("image/") || file.mimeType === "application/pdf");
 
+  const handleCardClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-dropdown-trigger]') || target.closest('[role="menu"]')) {
+      return;
+    }
+    
+    if (file.type === "folder" && onClick) {
+      onClick(file);
+    } else if (canPreview) {
+      onPreview(file);
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
@@ -74,43 +107,88 @@ export function FileCard({ file, onRename, onDelete, onPreview }: FileCardProps)
       onHoverEnd={() => setIsHovered(false)}
     >
       <Card 
-        className="p-4 hover-elevate cursor-pointer transition-all"
+        className={`p-4 hover-elevate cursor-pointer transition-all ${
+          file.type === "folder" ? "border-primary/20 hover:border-primary/40" : ""
+        }`}
+        onClick={handleCardClick}
         data-testid={`card-file-${file.id}`}
       >
         <div className="flex flex-col items-center text-center space-y-3">
-          <div className="relative">
-            {getIcon()}
-            <div className="absolute -top-2 -right-2">
+          <div className="relative w-full">
+            <div className="flex justify-center relative mb-2">
+              {getIcon()}
+              {shareData?.isShared && (
+                <Badge variant="secondary" className="absolute -top-1 -right-1 h-5 px-1.5 text-xs gap-1" data-testid={`badge-shared-${file.id}`}>
+                  <Link2 className="h-2.5 w-2.5" />
+                  Shared
+                </Badge>
+              )}
+            </div>
+            <div className="absolute -bottom-2 -right-2" data-dropdown-trigger>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button 
                     size="icon" 
                     variant="secondary" 
                     className="h-7 w-7"
+                    onClick={(e) => e.stopPropagation()}
                     data-testid={`button-menu-${file.id}`}
                   >
                     <MoreVertical className="h-3 w-3" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  {file.type === "folder" && onClick && (
+                    <DropdownMenuItem 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onClick(file);
+                      }}
+                      data-testid={`button-open-${file.id}`}
+                    >
+                      <FolderOpen className="h-4 w-4 mr-2" />
+                      Open
+                    </DropdownMenuItem>
+                  )}
                   {canPreview && (
                     <DropdownMenuItem 
-                      onClick={() => onPreview(file)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onPreview(file);
+                      }}
                       data-testid={`button-preview-${file.id}`}
                     >
                       <Eye className="h-4 w-4 mr-2" />
                       Preview
                     </DropdownMenuItem>
                   )}
+                  {file.type === "file" && (
+                    <DropdownMenuItem 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onShare(file);
+                      }}
+                      data-testid={`button-share-${file.id}`}
+                    >
+                      <Share2 className="h-4 w-4 mr-2" />
+                      Share
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem 
-                    onClick={() => onRename(file)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRename(file);
+                    }}
                     data-testid={`button-rename-${file.id}`}
                   >
                     <Pencil className="h-4 w-4 mr-2" />
                     Rename
                   </DropdownMenuItem>
                   <DropdownMenuItem 
-                    onClick={() => onDelete(file)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete(file);
+                    }}
                     className="text-destructive"
                     data-testid={`button-delete-${file.id}`}
                   >
@@ -131,10 +209,14 @@ export function FileCard({ file, onRename, onDelete, onPreview }: FileCardProps)
               {file.name}
             </p>
             <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground mt-1">
-              <span>{formatSize(file.size)}</span>
+              {file.type === "folder" ? (
+                <span>Folder</span>
+              ) : (
+                <span>{formatSize(file.size)}</span>
+              )}
               {file.modifiedAt && (
                 <>
-                  <span>•</span>
+                  <span>·</span>
                   <span>{formatDistanceToNow(new Date(file.modifiedAt), { addSuffix: true })}</span>
                 </>
               )}

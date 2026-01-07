@@ -21,7 +21,7 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent 
-        className="max-w-4xl max-h-[90vh] p-0 overflow-hidden"
+        className="max-w-[90vw] max-h-[90vh] p-0 overflow-hidden"
         data-testid="dialog-preview"
       >
         <motion.div
@@ -34,24 +34,19 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
             <h3 className="font-semibold truncate flex-1 pr-4" title={file.name}>
               {file.name}
             </h3>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => onOpenChange(false)}
-              data-testid="button-close-preview"
-            >
-              <X className="h-4 w-4" />
-            </Button>
+            
           </div>
 
-          <div className="p-4 max-h-[calc(90vh-80px)] overflow-auto">
+          <div className="p-6 max-h-[calc(90vh-80px)] overflow-auto bg-background/50 backdrop-blur-sm">
             {isImage && (
-              <img
-                src={fileUrl}
-                alt={file.name}
-                className="max-w-full h-auto mx-auto rounded-lg"
-                data-testid="img-preview"
-              />
+              <div className="relative group rounded-2xl overflow-hidden shadow-2xl border-4 border-white/10">
+                <img
+                  src={fileUrl}
+                  alt={file.name}
+                  className="max-w-full h-auto mx-auto"
+                  data-testid="img-preview"
+                />
+              </div>
             )}
             {isPDF && (
               <iframe

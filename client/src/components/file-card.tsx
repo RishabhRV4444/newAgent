@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
   FileText,
@@ -13,6 +14,7 @@ import {
   Eye,
   Share2,
   FolderOpen,
+  Link2,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,7 +24,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { FileItem } from "@shared/schema";
+import { Badge } from "@/components/ui/badge";
+import type { FileItem, ShareLink } from "@shared/schema";
 import { formatDistanceToNow } from "date-fns";
 
 interface FileCardProps {
@@ -36,6 +39,32 @@ interface FileCardProps {
 
 export function FileCard({ file, onRename, onDelete, onPreview, onShare, onClick }: FileCardProps) {
   const [isHovered, setIsHovered] = useState(false);
+  
+  const { data: shareData } = useQuery<{ isShared: boolean; share: ShareLink | null }>({
+    queryKey: ["/api/shares", file.id, "check"],
+    queryFn: async () => {
+      if (file.type !== "file") return { isShared: false, share: null };
+      const res = await fetch(`/api/shares/${file.id}/check`);
+      return res.json();
+    },
+  });
+
+  const getPreview = () => {
+    if (file.type === "file" && file.mimeType?.startsWith("image/")) {
+      const fileUrl = `/api/files/${file.id}/content`;
+      return (
+        <div className="relative w-full h-36 bg-muted rounded-xl overflow-hidden mb-3 border-2 border-primary/5">
+          <img 
+            src={fileUrl} 
+            alt={file.name}
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+        </div>
+      );
+    }
+    return null;
+  };
 
   const getIcon = () => {
     if (file.type === "folder") {
@@ -95,26 +124,66 @@ export function FileCard({ file, onRename, onDelete, onPreview, onShare, onClick
       onHoverEnd={() => setIsHovered(false)}
     >
       <Card 
-        className={`p-4 hover-elevate cursor-pointer transition-all ${
+        className={`p-4 hover-elevate cursor-pointer transition-all group ${
           file.type === "folder" ? "border-primary/20 hover:border-primary/40" : ""
         }`}
         onClick={handleCardClick}
         data-testid={`card-file-${file.id}`}
       >
         <div className="flex flex-col items-center text-center space-y-3">
-          <div className="relative">
-            {getIcon()}
-            <div className="absolute -top-2 -right-2" data-dropdown-trigger>
+          {getPreview()}
+          <div className="relative w-full">
+            <div className="flex justify-center relative mb-2">
+              {getPreview() ? null : getIcon()}
+              {shareData?.isShared && (
+                <Badge variant="secondary" className="absolute -top-1 -right-1 h-5 px-1.5 text-xs gap-1" data-testid={`badge-shared-${file.id}`}>
+                  <Link2 className="h-2.5 w-2.5" />
+                  Shared
+                </Badge>
+              )}
+            </div>
+            
+            <div className="flex gap-1 justify-center opacity-0 group-hover:opacity-100 transition-opacity mb-2" data-dropdown-trigger>
+              {file.type === "file" && (
+                <Button 
+                  size="icon" 
+                  variant="ghost" 
+                  className="h-7 w-7"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onShare(file);
+                  }}
+                  data-testid={`button-share-quick-${file.id}`}
+                  title="Share file"
+                >
+                  <Share2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
+              {canPreview && (
+                <Button 
+                  size="icon" 
+                  variant="ghost" 
+                  className="h-7 w-7"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onPreview(file);
+                  }}
+                  data-testid={`button-preview-quick-${file.id}`}
+                  title="Preview"
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                </Button>
+              )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button 
                     size="icon" 
-                    variant="secondary" 
+                    variant="ghost" 
                     className="h-7 w-7"
                     onClick={(e) => e.stopPropagation()}
                     data-testid={`button-menu-${file.id}`}
                   >
-                    <MoreVertical className="h-3 w-3" />
+                    <MoreVertical className="h-3.5 w-3.5" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -128,30 +197,6 @@ export function FileCard({ file, onRename, onDelete, onPreview, onShare, onClick
                     >
                       <FolderOpen className="h-4 w-4 mr-2" />
                       Open
-                    </DropdownMenuItem>
-                  )}
-                  {canPreview && (
-                    <DropdownMenuItem 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onPreview(file);
-                      }}
-                      data-testid={`button-preview-${file.id}`}
-                    >
-                      <Eye className="h-4 w-4 mr-2" />
-                      Preview
-                    </DropdownMenuItem>
-                  )}
-                  {file.type === "file" && (
-                    <DropdownMenuItem 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onShare(file);
-                      }}
-                      data-testid={`button-share-${file.id}`}
-                    >
-                      <Share2 className="h-4 w-4 mr-2" />
-                      Share
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuItem 

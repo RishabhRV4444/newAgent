@@ -1,76 +1,33 @@
-import type { Express } from "express"
-import { createServer, type Server } from "http"
-import multer from "multer"
-import os from "os";
-import path from "path"
-import { promises as fs } from "fs"
-import { storage, getUploadsDir, getStorageBasePath,  } from "./storage";
-import { createFolderSchema, renameFileSchema,createShareSchema } from "@shared/schema"
-import {
-  createUser,
-  findUserByUsername,
-  verifyPassword,
-  requireAuth,
-
-  findUserById,
-} from "./auth"
-import { signupSchema, loginSchema } from "@shared/auth-schema"
-
+import type { Express } from "express";
+import { createServer, type Server } from "http";
+import multer from "multer";
+import path from "path";
+import { promises as fs } from "fs";
+import { existsSync, mkdirSync } from "fs";
+import { storage, getUploadsDir, getStorageBasePath, verifyPassword } from "./storage";
 import { ngrokService } from "./ngrokService";
-import type { CloudAgentStatus, AgentLog, CloudControlResult } from "@shared/schema";
-
-declare module "express-session" {
-  interface SessionData {
-    userId?: string
-  }
-}
-
-declare global {
-  namespace Express {
-    interface Request {
-      uploadParentPath?: string
-    }
-  }
-}
-const agentLogs: AgentLog[] = [];
-
-function addAgentLog(message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info'): void {
-  const log: AgentLog = {
-    id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    timestamp: new Date().toISOString(),
-    message,
-    type,
-  };
-  agentLogs.unshift(log);
-  if (agentLogs.length > 100) {
-    agentLogs.pop();
-  }
-}
-
-function getNetworkAddress(): string {
-  const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name] || []) {
-      if (iface.family === 'IPv4' && !iface.internal) {
-        return `http://${iface.address}:5000`;
-      }
-    }
-  }
-  return 'Not detected';
-}
-
-let UPLOADS_DIR: string
-
-const storagePathMiddleware = (req: any, res: any, next: any) => {
-  req.uploadParentPath = (req.body?.parentPath || req.query?.parentPath || "/").toString()
-  next()
-}
+import { createFolderSchema, renameFileSchema, createShareSchema, verifySharePasswordSchema } from "@shared/schema";
 
 const multerStorage = multer.diskStorage({
-  destination: async (_req, _file, cb) => {
-    const uploadsDir = getUploadsDir();
-    await fs.mkdir(uploadsDir, { recursive: true });
-    cb(null, uploadsDir);
+  destination: (req, _file, cb: any) => {
+    try {
+      const uploadsDir = getUploadsDir();
+      const parentPath = (req.body.parentPath as string) || "/";
+      const sanitizedParentPath = parentPath
+        .split("/")
+        .filter(segment => segment && !segment.includes(".."))
+        .join("/");
+      const folderPath = sanitizedParentPath === "/" 
+        ? uploadsDir 
+        : path.join(uploadsDir, sanitizedParentPath.replace(/^\//, ""));
+      
+      if (!existsSync(folderPath)) {
+        mkdirSync(folderPath, { recursive: true });
+      }
+      cb(null, folderPath);
+    } catch (error: any) {
+      cb(error);
+    }
   },
   filename: (_req, file, cb) => {
     const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
@@ -86,124 +43,19 @@ const upload = multer({
     fileSize: 100 * 1024 * 1024, // 100 MB per file
   },
 });
+
 export async function registerRoutes(app: Express): Promise<Server> {
-  await storage.initialize()
-  
-
-  app.post("/api/auth/signup", async (req, res) => {
-    try {
-      const result = signupSchema.safeParse(req.body)
-      if (!result.success) {
-        return res.status(400).json({
-          error: "Validation failed",
-          details: result.error.issues,
-        })
-      }
-
-      const { username, email, password } = result.data
-
-      // Check if user exists
-      const existingUser = await findUserByUsername(username)
-      if (existingUser) {
-        return res.status(409).json({ error: "Username already exists" })
-      }
-
-      const user = await createUser(username, email, password)
-      req.session.userId = user.id
-
-      res.json({
-        user: {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-        },
-      })
-    } catch (error: any) {
-      console.error("Signup error:", error)
-      res.status(500).json({ error: error.message || "Signup failed" })
-    }
-  })
-
-  app.post("/api/auth/login", async (req, res) => {
-    try {
-      const result = loginSchema.safeParse(req.body)
-      if (!result.success) {
-        return res.status(400).json({
-          error: "Validation failed",
-          details: result.error.issues,
-        })
-      }
-
-      const { username, password } = result.data
-      const user = await findUserByUsername(username)
-
-      if (!user) {
-        return res.status(401).json({ error: "Invalid credentials" })
-      }
-
-      const passwordMatch = await verifyPassword(password, user.password)
-      if (!passwordMatch) {
-        return res.status(401).json({ error: "Invalid credentials" })
-      }
-
-      req.session.userId = user.id
-
-      res.json({
-        user: {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-        },
-      })
-    } catch (error: any) {
-      console.error("Login error:", error)
-      res.status(500).json({ error: error.message || "Login failed" })
-    }
-  })
-
-  app.post("/api/auth/logout", (req, res) => {
-    req.session.destroy(() => {
-      res.json({ message: "Logged out successfully" })
-    })
-  })
-
-  app.get("/api/auth/me", async (req: any, res) => {
-    try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" })
-      }
-
-      const user = await findUserById(req.session.userId)
-      if (!user) {
-        return res.status(404).json({ error: "User not found" })
-      }
-
-      res.json({
-        user: {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-        },
-      })
-    } catch (error: any) {
-      console.error("Error fetching user:", error)
-      res.status(500).json({ error: error.message || "Failed to fetch user" })
-    }
-  })
-
-  
+  await storage.initialize();
 
   app.get("/api/storage", async (_req, res) => {
     try {
-      const storageInfo = await storage.getStorageInfo()
-      res.json(storageInfo)
+      const storageInfo = await storage.getStorageInfo();
+      res.json(storageInfo);
     } catch (error) {
-      console.error("Error getting storage info:", error)
-      res.status(500).json({ error: "Failed to get storage info" })
+      console.error("Error getting storage info:", error);
+      res.status(500).json({ error: "Failed to get storage info" });
     }
-  })
-
-  
+  });
 
   app.get("/api/files", async (_req, res) => {
     try {
@@ -237,7 +89,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-   app.post("/api/upload", upload.array("files", 10), async (req, res) => {
+  app.post("/api/upload", upload.array("files", 10), async (req, res) => {
     try {
       const files = req.files as Express.Multer.File[];
       
@@ -253,17 +105,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .join("/");
       const normalizedParentPath = sanitizedParentPath ? `/${sanitizedParentPath}` : "/";
 
+      const uploadsDir = getUploadsDir();
+      
       const createdFiles = await Promise.all(
-        files.map((file) =>
-          storage.createFile({
+        files.map(async (file) => {
+          // Calculate the relative path from the uploads directory to the file
+          const absoluteFilePath = file.path;
+          const relativePath = path.relative(uploadsDir, absoluteFilePath);
+          
+          console.log("File uploaded:", {
+            originalname: file.originalname,
+            absolutePath: absoluteFilePath,
+            uploadsDir,
+            relativePath,
+            parentPath: normalizedParentPath,
+          });
+          
+          return storage.createFile({
             name: file.originalname,
             type: "file",
             mimeType: file.mimetype,
             size: file.size,
-            path: file.filename,
+            path: relativePath,
             parentPath: normalizedParentPath,
           })
-        )
+        })
       );
 
       res.json({ 
@@ -275,7 +141,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Failed to upload files" });
     }
   });
-
 
   app.post("/api/folders", async (req, res) => {
     try {
@@ -337,109 +202,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-    app.post("/api/upload", upload.array("files", 10), async (req, res) => {
-    try {
-      const files = req.files as Express.Multer.File[];
-      
-      if (!files || files.length === 0) {
-        return res.status(400).json({ error: "No files uploaded" });
-      }
-
-      const createdFiles = await Promise.all(
-        files.map((file) =>
-          storage.createFile({
-            name: file.originalname,
-            type: "file",
-            mimeType: file.mimetype,
-            size: file.size,
-            path: file.filename,
-            parentPath: "/",
-          })
-        )
-      );
-
-      res.json({ 
-        message: "Files uploaded successfully", 
-        files: createdFiles 
-      });
-    } catch (error) {
-      console.error("Error uploading files:", error);
-      res.status(500).json({ error: "Failed to upload files" });
-    }
-  });
-
-
-  // app.post("/api/folders", requireAuth as any, async (req, res) => {
-  //   try {
-  //     const result = createFolderSchema.safeParse(req.body)
-  //     if (!result.success) {
-  //       return res.status(400).json({
-  //         error: "Invalid request",
-  //         details: result.error.issues,
-  //       })
-  //     }
-
-  //     const folder = await storage.createFolder(result.data)
-  //     res.json(folder)
-  //   } catch (error: any) {
-  //     console.error("Error creating folder:", error)
-  //     res.status(500).json({ error: error.message || "Failed to create folder" })
-  //   }
-  // })
-
-  // app.put("/api/files/:id/rename", requireAuth as any, async (req, res) => {
-  //   try {
-  //     const result = renameFileSchema.safeParse({
-  //       id: req.params.id,
-  //       newName: req.body.newName,
-  //     })
-
-  //     if (!result.success) {
-  //       return res.status(400).json({
-  //         error: "Invalid request",
-  //         details: result.error.issues,
-  //       })
-  //     }
-
-  //     const file = await storage.renameFile(result.data.id, result.data.newName)
-  //     res.json(file)
-  //   } catch (error: any) {
-  //     console.error("Error renaming file:", error)
-
-  //     if (error.message === "File not found") {
-  //       return res.status(404).json({ error: "File not found" })
-  //     }
-
-  //     res.status(500).json({ error: error.message || "Failed to rename file" })
-  //   }
-  // })
-
-  // app.delete("/api/files/:id", requireAuth as any, async (req, res) => {
-  //   try {
-  //     await storage.deleteFile(req.params.id)
-  //     res.json({ message: "File deleted successfully" })
-  //   } catch (error: any) {
-  //     console.error("Error deleting file:", error)
-
-  //     if (error.message === "File not found") {
-  //       return res.status(404).json({ error: "File not found" })
-  //     }
-
-  //     res.status(500).json({ error: error.message || "Failed to delete file" })
-  //   }
-  // })
-
-  app.get("/api/checkshare/:fileId", async (req, res) => {
-  try {
-      const share = await storage.getShareByFileId(req.params.fileId);
-      res.json({ isShared: !!share, share: share || null });
-    } catch (error) {
-      console.error("Error checking share:", error);
-      res.status(500).json({ error: "Failed to check share status" });
-    }
-});
-
- app.get("/api/shares", async (_req, res) => {
+  app.get("/api/shares", async (_req, res) => {
     try {
       const shares = await storage.getAllShares();
       res.json(shares);
@@ -449,7 +212,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-   app.post("/api/shares", async (req, res) => {
+  app.get("/api/shares/:fileId/check", async (req, res) => {
+    try {
+      const share = await storage.getShareByFileId(req.params.fileId);
+      res.json({ isShared: !!share, share: share || null });
+    } catch (error) {
+      console.error("Error checking share:", error);
+      res.status(500).json({ error: "Failed to check share status" });
+    }
+  });
+
+  app.post("/api/shares", async (req, res) => {
     try {
       const result = createShareSchema.safeParse(req.body);
       if (!result.success) {
@@ -471,24 +244,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const updatedShare = await storage.updateShare(share.id, { tunnelUrl });
         res.json(updatedShare);
       } catch (tunnelError: any) {
-        await storage.deleteShare(share.id);
         console.error("Error starting ngrok tunnel:", tunnelError);
         
-        if (tunnelError.message?.includes("NGROK_AUTHTOKEN")) {
+        // Don't delete the share - keep it for local access
+        // Just return error response without tunnel URL
+        const errorMessage = tunnelError.message || 'Unknown error';
+        
+        if (errorMessage.includes("NGROK_AUTHTOKEN")) {
+          await storage.deleteShare(share.id);
           return res.status(400).json({ 
             error: "NGROK_AUTHTOKEN is required. Please add your ngrok auth token in the Secrets tab." 
           });
         }
         
-        throw tunnelError;
+        if (errorMessage.includes("ngrok module") || errorMessage.includes("not available")) {
+          // Keep the share but return error about ngrok
+          return res.status(503).json({ 
+            error: "ngrok tunnel service is not available",
+            details: errorMessage,
+            share: share // Return share without tunnel URL
+          });
+        }
+        
+        // For other errors, delete the share and return error
+        await storage.deleteShare(share.id);
+        return res.status(500).json({ 
+          error: "Failed to create share tunnel",
+          details: errorMessage
+        });
       }
     } catch (error: any) {
       console.error("Error creating share:", error);
       res.status(500).json({ error: error.message || "Failed to create share" });
     }
   });
-
-
 
   app.delete("/api/shares/:id", async (req, res) => {
     try {
@@ -502,6 +291,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       res.status(500).json({ error: error.message || "Failed to stop share" });
+    }
+  });
+
+  app.post("/api/share/:token/verify", async (req, res) => {
+    try {
+      const result = verifySharePasswordSchema.safeParse({
+        token: req.params.token,
+        password: req.body.password,
+      });
+
+      if (!result.success) {
+        return res.status(400).json({ error: "Invalid request" });
+      }
+
+      const share = await storage.getShareByToken(result.data.token);
+      if (!share) {
+        return res.status(404).json({ error: "Share not found" });
+      }
+
+      const isValid = storage.checkSharePassword(share, result.data.password);
+      if (!isValid) {
+        return res.status(401).json({ error: "Invalid password" });
+      }
+
+      res.json({ valid: true, fileName: share.fileName });
+    } catch (error) {
+      console.error("Error verifying share password:", error);
+      res.status(500).json({ error: "Failed to verify password" });
     }
   });
 
@@ -613,128 +430,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Cloud Agent Status API
-  app.get("/api/agent/status", async (_req, res) => {
-    try {
-      const storagePath = getStorageBasePath();
-      const status: CloudAgentStatus = {
-        cloudStatus: 'running',
-        containerName: 'arevei-cloud',
-        dockerInstalled: true,
-        dockerVersion: 'v24.0+',
-        dockerRunning: true,
-        connectionStatus: 'connected',
-        connectionUser: 'admin@arevei.shop',
-        agentOnline: true,
-        localUrl: 'http://localhost:5000',
-        networkUrl: getNetworkAddress(),
-      };
-      res.json(status);
-    } catch (error) {
-      console.error("Error getting agent status:", error);
-      res.status(500).json({ error: "Failed to get agent status" });
-    }
-  });
-
-  // Cloud Agent Logs API
-  app.get("/api/agent/logs", (_req, res) => {
-    res.json(agentLogs);
-  });
-
-  app.delete("/api/agent/logs", (_req, res) => {
-    agentLogs.length = 0;
-    res.json({ message: "Logs cleared" });
-  });
-
-  // Cloud Control APIs
-  app.post("/api/agent/start", async (_req, res) => {
-    try {
-      addAgentLog('Starting cloud agent...', 'info');
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      addAgentLog('Cloud agent started successfully!', 'success');
-      const result: CloudControlResult = { success: true, message: 'Cloud agent started' };
-      res.json(result);
-    } catch (error: any) {
-      addAgentLog(`Failed to start: ${error.message}`, 'error');
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  app.post("/api/agent/stop", async (_req, res) => {
-    try {
-      addAgentLog('Stopping cloud agent...', 'info');
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      addAgentLog('Cloud agent stopped successfully!', 'success');
-      const result: CloudControlResult = { success: true, message: 'Cloud agent stopped' };
-      res.json(result);
-    } catch (error: any) {
-      addAgentLog(`Failed to stop: ${error.message}`, 'error');
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  app.post("/api/agent/restart", async (_req, res) => {
-    try {
-      addAgentLog('Restarting cloud agent...', 'info');
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      addAgentLog('Cloud agent restarted successfully!', 'success');
-      const result: CloudControlResult = { success: true, message: 'Cloud agent restarted' };
-      res.json(result);
-    } catch (error: any) {
-      addAgentLog(`Failed to restart: ${error.message}`, 'error');
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  app.post("/api/agent/heartbeat", async (_req, res) => {
-    try {
-      addAgentLog('Heartbeat sent', 'info');
-      res.json({ success: true, online: true });
-    } catch (error: any) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  app.post("/api/agent/test-connection", async (_req, res) => {
-    try {
-      addAgentLog('Testing connection to arevei.shop...', 'info');
-      await new Promise(resolve => setTimeout(resolve, 500));
-      addAgentLog('Connection successful! User: admin@arevei.shop', 'success');
-      res.json({ 
-        success: true, 
-        connected: true, 
-        user: 'admin@arevei.shop',
-        devMode: true 
-      });
-    } catch (error: any) {
-      addAgentLog(`Connection test failed: ${error.message}`, 'error');
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  app.get("/api/agent/config", async (_req, res) => {
-    try {
-      const storagePath = getStorageBasePath();
-      res.json({
-        syncFolder: storagePath,
-        defaultUsername: 'admin',
-        defaultPassword: 'Arevei@2024',
-        localUrl: 'http://localhost:5000',
-        networkUrl: getNetworkAddress(),
-      });
-    } catch (error) {
-      console.error("Error getting agent config:", error);
-      res.status(500).json({ error: "Failed to get config" });
-    }
-  });
-
   const httpServer = createServer(app);
   
   const port = parseInt(process.env.PORT || "5000", 10);
   await ngrokService.initialize(port);
   
-  addAgentLog('AREVEI Cloud Agent initialized', 'success');
-  addAgentLog(`Serving on port ${port}`, 'info');
-  addAgentLog(`Network URL: ${getNetworkAddress()}`, 'info');
-  return httpServer
+  return httpServer;
 }
