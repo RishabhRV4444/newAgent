@@ -4,6 +4,7 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const os = require('os');
 const http = require('http');
+const { spawn } = require('child_process');
 
 let mainWindow;
 let shareServer;
@@ -12,7 +13,18 @@ const sharedFiles = new Map();
 
 const isDev = process.env.NODE_ENV !== 'production' || !app.isPackaged;
 
+
 function createWindow() {
+  // Find icon path - check multiple possible locations
+  let iconPath = path.join(__dirname, '../client/public/favicon.png');
+  if (!fsSync.existsSync(iconPath)) {
+    // Try alternative paths in production
+    iconPath = path.join(__dirname, '../resources/client/public/favicon.png');
+    if (!fsSync.existsSync(iconPath)) {
+      iconPath = undefined; // Use default icon
+    }
+  }
+  
   mainWindow = new BrowserWindow({
     autoHideMenuBar: true,
     width: 1200,
@@ -26,6 +38,7 @@ function createWindow() {
     },
     titleBarStyle: 'default',
     show: false,
+    ...(iconPath && { icon: iconPath }),
   });
 
   if (isDev) {
